@@ -1,12 +1,8 @@
 # ammb/__init__.py
 """
-Akita Meshtastic-Meshcore Bridge (AMMB) Package.
-
-This package contains the core modules for the AMMB application.
+Akita Meshtastic Bridge (AMMB) Package.
 """
 
-# Make the main Bridge class easily importable
 from .bridge import Bridge
 
-# Optionally define __version__ or other package-level info
-__version__ = "0.1.0"
+__version__ = "0.2.1"
