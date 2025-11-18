@@ -1,63 +1,77 @@
 # ammb/config_handler.py
 """
-Handles loading, validation, and access for the bridge configuration (`config.ini`).
+Handles loading, validation, and access for the bridge configuration.
 """
 
 import configparser
 import logging
 import os
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Literal
 
-# Define the structure for the configuration using NamedTuple for immutability and clarity
 class BridgeConfig(NamedTuple):
     """Stores all configuration settings for the bridge."""
+    # Meshtastic Settings
     meshtastic_port: str
-    meshcore_port: str
-    meshcore_baud: int
-    meshcore_protocol: str
-    meshcore_network_id: str
+
+    # External Network Interface Settings
+    external_transport: Literal['serial', 'mqtt']
+
+    # Serial Specific (Optional)
+    serial_port: Optional[str]
+    serial_baud: Optional[int]
+    serial_protocol: Optional[str]
+
+    # MQTT Specific (Optional)
+    mqtt_broker: Optional[str]
+    mqtt_port: Optional[int]
+    mqtt_topic_in: Optional[str]
+    mqtt_topic_out: Optional[str]
+    mqtt_username: Optional[str]
+    mqtt_password: Optional[str]
+    mqtt_client_id: Optional[str]
+    mqtt_qos: Optional[int]
+    mqtt_retain_out: Optional[bool]
+
+    # Common Settings
+    external_network_id: str
     bridge_node_id: str
     queue_size: int
     log_level: str
 
-# --- Constants ---
-CONFIG_FILE = "config.ini" # Default config filename
+CONFIG_FILE = "config.ini"
 
-# Default values used if a setting is missing from config.ini
 DEFAULT_CONFIG = {
-    'MESHTASTIC_SERIAL_PORT': '/dev/ttyUSB0', # Example for Linux
-    # 'MESHTASTIC_SERIAL_PORT': 'COM3',      # Example for Windows
-    'MESHCORE_SERIAL_PORT': '/dev/ttyS0',    # Example for Linux
-    # 'MESHCORE_SERIAL_PORT': 'COM4',        # Example for Windows
-    'MESHCORE_BAUD_RATE': '9600',            # Common baud rate, adjust as needed
-    'MESHCORE_PROTOCOL': 'json_newline',     # Default protocol handler
-    'MESHCORE_NETWORK_ID': 'ammb_default_net', # Conceptual ID
-    'BRIDGE_NODE_ID': '!ammb_bridge',        # Default bridge ID, recommend user sets explicitly
-    'MESSAGE_QUEUE_SIZE': '100',             # Default queue size
-    'LOG_LEVEL': 'INFO',                     # Default logging level
+    'MESHTASTIC_SERIAL_PORT': '/dev/ttyUSB0',
+    'EXTERNAL_TRANSPORT': 'serial',
+    'SERIAL_PORT': '/dev/ttyS0',
+    'SERIAL_BAUD_RATE': '9600',
+    'SERIAL_PROTOCOL': 'json_newline',
+    'MQTT_BROKER': 'localhost',
+    'MQTT_PORT': '1883',
+    'MQTT_TOPIC_IN': 'ammb/to_meshtastic',
+    'MQTT_TOPIC_OUT': 'ammb/from_meshtastic',
+    'MQTT_USERNAME': '',
+    'MQTT_PASSWORD': '',
+    'MQTT_CLIENT_ID': 'ammb_bridge_client',
+    'MQTT_QOS': '0',
+    'MQTT_RETAIN_OUT': 'False',
+    'EXTERNAL_NETWORK_ID': 'default_external_net',
+    'BRIDGE_NODE_ID': '!ammb_bridge',
+    'MESSAGE_QUEUE_SIZE': '100',
+    'LOG_LEVEL': 'INFO',
 }
 
-# Valid options for settings requiring specific choices
 VALID_LOG_LEVELS = {'CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'}
-VALID_MESHCORE_PROTOCOLS = {'json_newline'} # Add more as they are implemented
+VALID_SERIAL_PROTOCOLS = {'json_newline', 'raw_serial'}
+VALID_TRANSPORTS = {'serial', 'mqtt'}
+VALID_MQTT_QOS = {0, 1, 2}
 
-# --- Functions ---
 def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
     """
     Loads and validates configuration from the specified INI file.
-
-    Reads the configuration file, applies defaults for missing values,
-    validates data types and choices, and returns a BridgeConfig object
-    or None if loading or validation fails.
-
-    Args:
-        config_path: The path to the configuration file.
-
-    Returns:
-        A BridgeConfig named tuple containing the settings, or None if an error occurs.
     """
-    logger = logging.getLogger(__name__) # Get logger for this module
-    config = configparser.ConfigParser()
+    logger = logging.getLogger(__name__)
+    config = configparser.ConfigParser(defaults=DEFAULT_CONFIG, interpolation=None)
 
     if not os.path.exists(config_path):
         logger.error(f"Configuration file not found: {config_path}")
@@ -68,58 +82,110 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         logger.info(f"Reading configuration from: {config_path}")
         config.read(config_path)
 
-        # Use the [DEFAULT] section for all settings
-        if 'DEFAULT' not in config:
-             logger.error(f"Configuration file '{config_path}' is missing the required [DEFAULT] section.")
-             return None
-        cfg_section = config['DEFAULT']
+        if 'DEFAULT' not in config.sections():
+             logger.warning(f"Configuration file '{config_path}' lacks the [DEFAULT] section. Using only defaults.")
+             cfg_section = config.defaults()
+        else:
+             cfg_section = config['DEFAULT']
 
-        # --- Get and Validate Settings ---
-        # Helper function to get value or default
-        def get_setting(key: str) -> str:
-            return cfg_section.get(key, DEFAULT_CONFIG[key])
-
-        meshtastic_port = get_setting('MESHTASTIC_SERIAL_PORT')
-        meshcore_port = get_setting('MESHCORE_SERIAL_PORT')
-        meshcore_network_id = get_setting('MESHCORE_NETWORK_ID')
-        bridge_node_id = get_setting('BRIDGE_NODE_ID')
-
-        # Validate Integer settings
-        try:
-            meshcore_baud = int(get_setting('MESHCORE_BAUD_RATE'))
-            queue_size = int(get_setting('MESSAGE_QUEUE_SIZE'))
-            if meshcore_baud <= 0 or queue_size <= 0:
-                 raise ValueError("Baud rate and queue size must be positive integers.")
-        except ValueError as e:
-            logger.error(f"Invalid integer value in configuration: {e}")
-            return None
-
-        # Validate Choice settings
-        log_level = get_setting('LOG_LEVEL').upper()
+        meshtastic_port = cfg_section.get('MESHTASTIC_SERIAL_PORT')
+        external_network_id = cfg_section.get('EXTERNAL_NETWORK_ID')
+        bridge_node_id = cfg_section.get('BRIDGE_NODE_ID')
+        log_level = cfg_section.get('LOG_LEVEL').upper()
+        
         if log_level not in VALID_LOG_LEVELS:
             logger.error(f"Invalid LOG_LEVEL '{log_level}'. Must be one of: {VALID_LOG_LEVELS}")
             return None
 
-        meshcore_protocol = get_setting('MESHCORE_PROTOCOL').lower()
-        if meshcore_protocol not in VALID_MESHCORE_PROTOCOLS:
-            # Log a warning but proceed using the default, in case user adds custom protocol later
-            logger.warning(
-                f"Unrecognized MESHCORE_PROTOCOL '{meshcore_protocol}'. "
-                f"Valid built-in options are: {VALID_MESHCORE_PROTOCOLS}. "
-                f"Attempting to use '{meshcore_protocol}' - ensure a corresponding handler exists."
-            )
-            # Or, enforce strict validation:
-            # logger.error(f"Invalid MESHCORE_PROTOCOL '{meshcore_protocol}'. Must be one of: {VALID_MESHCORE_PROTOCOLS}")
-            # return None
+        try:
+            queue_size = cfg_section.getint('MESSAGE_QUEUE_SIZE')
+            if queue_size <= 0:
+                 raise ValueError("Queue size must be positive.")
+        except ValueError as e:
+            logger.error(f"Invalid integer value for MESSAGE_QUEUE_SIZE: {e}")
+            return None
 
+        external_transport = cfg_section.get('EXTERNAL_TRANSPORT').lower()
+        if external_transport not in VALID_TRANSPORTS:
+            logger.error(f"Invalid EXTERNAL_TRANSPORT '{external_transport}'. Must be one of: {VALID_TRANSPORTS}")
+            return None
 
-        # --- Create and Return Config Object ---
+        serial_port = None
+        serial_baud = None
+        serial_protocol = None
+        mqtt_broker = None
+        mqtt_port = None
+        mqtt_topic_in = None
+        mqtt_topic_out = None
+        mqtt_username = None
+        mqtt_password = None
+        mqtt_client_id = None
+        mqtt_qos = None
+        mqtt_retain_out = None
+
+        if external_transport == 'serial':
+            serial_port = cfg_section.get('SERIAL_PORT')
+            serial_protocol = cfg_section.get('SERIAL_PROTOCOL').lower()
+            if not serial_port:
+                 logger.error("SERIAL_PORT must be set when EXTERNAL_TRANSPORT is 'serial'.")
+                 return None
+            if serial_protocol not in VALID_SERIAL_PROTOCOLS:
+                 logger.warning(
+                    f"Unrecognized SERIAL_PROTOCOL '{serial_protocol}'. "
+                    f"Valid built-in options are: {VALID_SERIAL_PROTOCOLS}. "
+                    f"Attempting to use '{serial_protocol}' - ensure a corresponding handler exists."
+                 )
+            try:
+                serial_baud = cfg_section.getint('SERIAL_BAUD_RATE')
+                if serial_baud <= 0:
+                     raise ValueError("Serial baud rate must be positive.")
+            except ValueError as e:
+                logger.error(f"Invalid integer value for SERIAL_BAUD_RATE: {e}")
+                return None
+
+        elif external_transport == 'mqtt':
+            mqtt_broker = cfg_section.get('MQTT_BROKER')
+            mqtt_topic_in = cfg_section.get('MQTT_TOPIC_IN')
+            mqtt_topic_out = cfg_section.get('MQTT_TOPIC_OUT')
+            mqtt_username = cfg_section.get('MQTT_USERNAME') 
+            mqtt_password = cfg_section.get('MQTT_PASSWORD')
+            mqtt_client_id = cfg_section.get('MQTT_CLIENT_ID')
+
+            if not mqtt_broker or not mqtt_topic_in or not mqtt_topic_out:
+                 logger.error("MQTT_BROKER, MQTT_TOPIC_IN, and MQTT_TOPIC_OUT must be set when EXTERNAL_TRANSPORT is 'mqtt'.")
+                 return None
+            if not mqtt_client_id:
+                 logger.warning("MQTT_CLIENT_ID is empty. Using default.")
+                 mqtt_client_id = DEFAULT_CONFIG['MQTT_CLIENT_ID']
+
+            try:
+                mqtt_port = cfg_section.getint('MQTT_PORT')
+                mqtt_qos = cfg_section.getint('MQTT_QOS')
+                mqtt_retain_out = cfg_section.getboolean('MQTT_RETAIN_OUT')
+                if mqtt_port <= 0 or mqtt_port > 65535:
+                     raise ValueError("MQTT port must be between 1 and 65535.")
+                if mqtt_qos not in VALID_MQTT_QOS:
+                     raise ValueError(f"MQTT_QOS must be one of {VALID_MQTT_QOS}.")
+            except ValueError as e:
+                logger.error(f"Invalid integer/boolean value in MQTT configuration: {e}")
+                return None
+
         bridge_config = BridgeConfig(
             meshtastic_port=meshtastic_port,
-            meshcore_port=meshcore_port,
-            meshcore_baud=meshcore_baud,
-            meshcore_protocol=meshcore_protocol,
-            meshcore_network_id=meshcore_network_id,
+            external_transport=external_transport,
+            serial_port=serial_port,
+            serial_baud=serial_baud,
+            serial_protocol=serial_protocol,
+            mqtt_broker=mqtt_broker,
+            mqtt_port=mqtt_port,
+            mqtt_topic_in=mqtt_topic_in,
+            mqtt_topic_out=mqtt_topic_out,
+            mqtt_username=mqtt_username,
+            mqtt_password=mqtt_password,
+            mqtt_client_id=mqtt_client_id,
+            mqtt_qos=mqtt_qos,
+            mqtt_retain_out=mqtt_retain_out,
+            external_network_id=external_network_id,
             bridge_node_id=bridge_node_id,
             queue_size=queue_size,
             log_level=log_level
@@ -127,15 +193,6 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         logger.debug(f"Configuration loaded: {bridge_config}")
         return bridge_config
 
-    except configparser.Error as e:
-        logger.error(f"Error parsing configuration file {config_path}: {e}")
-        return None
-    except KeyError as e:
-        # This shouldn't happen if defaults cover all keys, but good practice
-        logger.error(f"Missing expected configuration key: {e}")
-        return None
     except Exception as e:
-        # Catch unexpected errors during loading/validation
         logger.error(f"Unexpected error loading configuration: {e}", exc_info=True)
         return None
-
