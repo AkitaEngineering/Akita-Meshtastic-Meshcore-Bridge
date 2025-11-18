@@ -1,73 +1,40 @@
 # examples/config.ini.example
-# Example configuration for the Akita Meshtastic-Meshcore Bridge (AMMB)
+# Example configuration for the Akita Meshtastic Bridge (AMMB)
 # Copy this file to 'config.ini' in the project root and modify it.
 
 [DEFAULT]
 # --- Meshtastic Settings ---
-
 # Serial port for the Meshtastic device.
-# Find the correct port for your system (e.g., check Device Manager on Windows,
-# or run 'meshtastic --port list' or check /dev/tty* on Linux).
-# Example Linux: /dev/ttyUSB0
-# Example Windows: COM3
 MESHTASTIC_SERIAL_PORT = /dev/ttyUSB0
 
+# --- External Network Interface Settings ---
+# Options: serial (direct connection), mqtt (network broker)
+EXTERNAL_TRANSPORT = serial
 
-# --- Meshcore Settings ---
+# --- Serial Transport Settings ---
+# Serial port for the external device (e.g., MeshCore).
+SERIAL_PORT = /dev/ttyS0
+SERIAL_BAUD_RATE = 9600
 
-# Serial port for the Meshcore device.
-# Find the correct port for your system.
-# Example Linux: /dev/ttyS0
-# Example Windows: COM4
-MESHCORE_SERIAL_PORT = /dev/ttyS0
+# Protocol handler for serial communication.
+# Options:
+#   json_newline: Expects/sends newline-terminated UTF-8 encoded JSON.
+#   raw_serial:   Reads raw binary/text bytes and forwards as Hex (For MeshCore Companion Mode).
+SERIAL_PROTOCOL = raw_serial
 
-# Baud rate for the Meshcore serial connection.
-# This MUST match the setting configured on your Meshcore device.
-# Common values include 9600, 19200, 38400, 57600, 115200.
-MESHCORE_BAUD_RATE = 9600
+# --- MQTT Transport Settings ---
+MQTT_BROKER = localhost
+MQTT_PORT = 1883
+MQTT_TOPIC_IN = ammb/to_meshtastic
+MQTT_TOPIC_OUT = ammb/from_meshtastic
+MQTT_USERNAME =
+MQTT_PASSWORD =
+MQTT_CLIENT_ID = ammb_bridge_client
+MQTT_QOS = 0
+MQTT_RETAIN_OUT = False
 
-# Protocol handler for Meshcore serial communication.
-# Determines how messages are encoded/decoded when sent/received over serial.
-# Built-in options:
-#   json_newline: Expects/sends newline-terminated UTF-8 encoded JSON strings.
-#                 See docs/architecture.md for the expected JSON structure.
-# You can add custom protocols in ammb/protocol.py if needed.
-MESHCORE_PROTOCOL = json_newline
-
-# Conceptual Network ID for Meshcore (optional).
-# Currently used mainly for logging/informational purposes.
-# Might be used in future translation logic.
-MESHCORE_NETWORK_ID = ammb_default_net
-
-
-# --- Bridge Settings ---
-
-# Identifier for the bridge node itself on the Meshtastic network.
-# This helps prevent the bridge from processing messages it sent itself.
-# It's recommended to use the Meshtastic node ID format (hex string starting with '!').
-# You can find your Meshtastic node's ID using 'meshtastic --info'.
-# If left blank, the bridge will try to use the connected node's actual ID,
-# but setting it explicitly can be more reliable.
+# --- Common Bridge Settings ---
+EXTERNAL_NETWORK_ID = default_external_net
 BRIDGE_NODE_ID = !ammb_bridge
-
-# Maximum size for the internal message queues (to_meshtastic, to_meshcore).
-# If a queue becomes full, new messages for that destination will be dropped.
 MESSAGE_QUEUE_SIZE = 100
-
-
-# --- Logging Settings ---
-
-# Logging level for console output. Controls the verbosity of logs.
-# Options (from least to most verbose):
-#   CRITICAL
-#   ERROR
-#   WARNING
-#   INFO (default)
-#   DEBUG
 LOG_LEVEL = INFO
-
-
-# --- Future / Unimplemented Settings ---
-# These are placeholders and not currently used by the code.
-# RETRY_COUNT = 3
-# RETRY_DELAY = 1
