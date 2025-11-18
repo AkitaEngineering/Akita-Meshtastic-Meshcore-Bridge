@@ -1,128 +1,131 @@
 # ammb/bridge.py
 """
 Main Bridge orchestrator class.
-
-Initializes and manages the Meshtastic and Meshcore handlers,
-starts their threads, and handles graceful shutdown.
 """
 
 import logging
 import threading
 from queue import Queue
 import time
+from typing import Union, Optional
 
-# Project dependencies
 from .config_handler import BridgeConfig
 from .meshtastic_handler import MeshtasticHandler
-from .meshcore_handler import MeshcoreHandler
+from .meshcore_handler import MeshcoreHandler 
+from .mqtt_handler import MQTTHandler 
+
+ExternalHandler = Union[MeshcoreHandler, MQTTHandler]
 
 class Bridge:
-    """Orchestrates the Meshtastic-Meshcore bridge operation."""
+    """Orchestrates the Meshtastic-External Network bridge operation."""
 
     def __init__(self, config: BridgeConfig):
-        """
-        Initializes the Bridge.
-
-        Args:
-            config: The loaded bridge configuration.
-        """
         self.logger = logging.getLogger(__name__)
         self.config = config
-        self.shutdown_event = threading.Event()
+        self.shutdown_event = threading.Event() 
 
-        # --- Initialize Queues ---
-        # Queue names indicate direction *towards* that network
         self.to_meshtastic_queue = Queue(maxsize=config.queue_size)
-        self.to_meshcore_queue = Queue(maxsize=config.queue_size)
+        self.to_external_queue = Queue(maxsize=config.queue_size)
         self.logger.info(f"Message queues initialized with max size: {config.queue_size}")
 
-        # --- Initialize Handlers ---
         self.logger.info("Initializing network handlers...")
-        self.meshtastic_handler = MeshtasticHandler(
-            config=config,
-            to_meshcore_queue=self.to_meshcore_queue,
-            from_meshcore_queue=self.to_meshtastic_queue, # Pass the correct queue
-            shutdown_event=self.shutdown_event
-        )
-        self.meshcore_handler = MeshcoreHandler(
-            config=config,
-            to_meshtastic_queue=self.to_meshtastic_queue,
-            from_meshtastic_queue=self.to_meshcore_queue, # Pass the correct queue
-            shutdown_event=self.shutdown_event
-        )
-        self.logger.info("Network handlers initialized.")
+        self.meshtastic_handler: Optional[MeshtasticHandler] = None
+        self.external_handler: Optional[ExternalHandler] = None
+        self.handlers = []
 
-        # List to keep track of handler instances for easy stop() iteration
-        self.handlers = [self.meshtastic_handler, self.meshcore_handler]
+        try:
+            self.meshtastic_handler = MeshtasticHandler(
+                config=config,
+                to_external_queue=self.to_external_queue,
+                from_external_queue=self.to_meshtastic_queue,
+                shutdown_event=self.shutdown_event
+            )
+            self.handlers.append(self.meshtastic_handler)
+
+            if config.external_transport == 'serial':
+                self.logger.info("Selected external transport: Serial")
+                self.external_handler = MeshcoreHandler(
+                    config=config,
+                    to_meshtastic_queue=self.to_meshtastic_queue,
+                    from_meshtastic_queue=self.to_external_queue,
+                    shutdown_event=self.shutdown_event
+                )
+                self.handlers.append(self.external_handler)
+            elif config.external_transport == 'mqtt':
+                self.logger.info("Selected external transport: MQTT")
+                self.external_handler = MQTTHandler(
+                    config=config,
+                    to_meshtastic_queue=self.to_meshtastic_queue,
+                    from_meshtastic_queue=self.to_external_queue,
+                    shutdown_event=self.shutdown_event
+                )
+                self.handlers.append(self.external_handler)
+            else:
+                raise ValueError(f"Invalid external_transport configured: {config.external_transport}")
+
+            self.logger.info(f"All required handlers initialized successfully.")
+
+        except (ValueError, Exception) as e:
+             self.logger.critical(f"Failed to initialize handlers: {e}. Bridge cannot start.", exc_info=True)
+             self.stop()
+             self.external_handler = None
 
 
     def run(self):
-        """Starts the bridge and keeps it running until shutdown."""
-        self.logger.info("Starting AMMB...")
+        self.logger.info("Starting AMMB run sequence...")
 
-        # --- Initial Connections ---
-        # Attempt initial connection to Meshtastic (required to start)
-        if not self.meshtastic_handler.connect():
-            self.logger.critical("Failed to connect to Meshtastic device on startup. Bridge cannot start.")
-            # Perform minimal cleanup if needed before exiting
-            self.stop() # Call stop even on failed start for consistency
-            return # Exit run method
-
-        # Attempt initial connection to Meshcore (can retry in background if fails)
-        if not self.meshcore_handler.connect():
-            self.logger.warning("Failed to connect to Meshcore device initially. Handler will keep trying in background.")
-            # Bridge continues running even if Meshcore fails initially
-
-        # --- Start Handler Threads ---
-        self.logger.info("Starting handler threads...")
-        try:
-            self.meshtastic_handler.start_sender()
-            self.meshcore_handler.start_threads() # Starts both receiver and sender
-        except Exception as e:
-             self.logger.critical(f"Failed to start handler threads: {e}", exc_info=True)
-             self.stop() # Attempt cleanup
+        if not self.meshtastic_handler or not self.external_handler:
+             self.logger.error("One or more handlers failed to initialize. Bridge cannot run.")
+             self.stop()
              return
 
-        self.logger.info("Bridge threads started. Running... (Press Ctrl+C to stop)")
+        self.logger.info("Attempting initial network connections...")
+        if not self.meshtastic_handler.connect():
+            self.logger.critical("Failed to connect to Meshtastic device on startup. Bridge cannot start.")
+            self.stop()
+            return
 
-        # --- Main Loop ---
-        # Keep the main thread alive while checking for the shutdown signal
+        if not self.external_handler.connect():
+            handler_type = type(self.external_handler).__name__
+            self.logger.warning(f"Failed to initiate connection for {handler_type} initially. Handler will keep trying in background.")
+
+        self.logger.info("Starting handler background tasks/threads...")
         try:
-            while not self.shutdown_event.is_set():
-                # Optional: Add health checks here if needed
-                # e.g., check if handler threads are still alive
-                # if not self.meshcore_handler.receiver_thread.is_alive(): ...
-                time.sleep(1) # Prevent busy-waiting
+            self.meshtastic_handler.start_sender()
+            if isinstance(self.external_handler, MeshcoreHandler):
+                self.external_handler.start_threads()
+            elif isinstance(self.external_handler, MQTTHandler):
+                self.external_handler.start_publisher()
 
         except Exception as e:
-             # Catch unexpected errors in the main loop itself
+             self.logger.critical(f"Failed to start handler background tasks: {e}", exc_info=True)
+             self.stop()
+             return
+
+        self.logger.info("Bridge background tasks started. Running... (Press Ctrl+C to stop)")
+
+        try:
+            while not self.shutdown_event.is_set():
+                time.sleep(1) 
+
+        except Exception as e:
              self.logger.critical(f"Unexpected error in main bridge loop: {e}", exc_info=True)
         finally:
-             # --- Shutdown Sequence ---
              self.logger.info("Main loop exiting. Initiating shutdown sequence...")
-             self.stop() # Ensure stop is called on any exit from the loop
+             self.stop()
 
     def stop(self):
-        """Initiates graceful shutdown of all components."""
         if self.shutdown_event.is_set():
-             self.logger.info("Shutdown already in progress.")
              return
 
         self.logger.info("Signaling shutdown to all components...")
         self.shutdown_event.set()
 
-        # Stop handlers (which will stop their threads and close connections)
-        # Stop in reverse order of dependency, or handle potential deadlocks if any
-        for handler in reversed(self.handlers): # Example: Stop Meshcore before Meshtastic? (Order might not matter much here)
+        self.logger.info(f"Stopping {len(self.handlers)} handlers...")
+        for handler in reversed(self.handlers):
              try:
                   handler.stop()
              except Exception as e:
-                  self.logger.error(f"Error stopping handler {type(handler).__name__}: {e}", exc_info=True)
-
-        # Optional: Wait for queues to empty? (Might block shutdown indefinitely)
-        # self.logger.info("Waiting for queues to empty...")
-        # self.to_meshtastic_queue.join()
-        # self.to_meshcore_queue.join()
+                  self.logger.error(f"Error stopping handler: {e}", exc_info=True)
 
         self.logger.info("Bridge shutdown sequence complete.")
-
