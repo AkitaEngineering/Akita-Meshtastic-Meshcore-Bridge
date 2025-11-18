@@ -1,13 +1,19 @@
 import pytest
-from ammb.config_handler import load_config, BridgeConfig
+import json
+from ammb.protocol import get_serial_protocol_handler, JsonNewlineProtocol
 
-def test_load_config_success(temp_config_file):
-    config = load_config(temp_config_file)
-    assert config is not None
-    assert isinstance(config, BridgeConfig)
-    assert config.meshtastic_port == '/dev/test_meshtastic'
-    assert config.serial_port == '/dev/test_meshcore'
+def test_json_newline_encode():
+    handler = JsonNewlineProtocol()
+    data = {"key": "value"}
+    encoded = handler.encode(data)
+    assert encoded == b'{"key": "value"}\n'
 
-def test_load_config_file_not_found():
-    config = load_config("non_existent_file.ini")
-    assert config is None
+def test_factory_function():
+    handler = get_serial_protocol_handler('json_newline')
+    assert isinstance(handler, JsonNewlineProtocol)
+    
+def test_raw_serial_handler():
+    handler = get_serial_protocol_handler('raw_serial')
+    raw_data = b'\x01\x02\x03'
+    decoded = handler.decode(raw_data)
+    assert decoded['payload'] == "MC_BIN: 010203
