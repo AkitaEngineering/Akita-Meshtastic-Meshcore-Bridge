@@ -58,7 +58,8 @@ class MeshcoreHandler:
                 self.logger.info(f"Attempting connection to Serial device on {self.config.serial_port} at {self.config.serial_baud} baud...")
                 self._is_connected.clear()
                 if self.serial_port: 
-                     try: self.serial_port.close()
+                     try:
+                          self.serial_port.close()
                      except Exception: pass
 
                 self.serial_port = serial.Serial(
@@ -76,6 +77,11 @@ class MeshcoreHandler:
                     self._is_connected.clear()
                     return False
 
+            except serial.SerialException as e:
+                self.logger.error(f"Serial error connecting to device {self.config.serial_port}: {e}")
+                self.serial_port = None
+                self._is_connected.clear()
+                return False
             except Exception as e:
                 self.logger.error(f"Unexpected error connecting to serial device: {e}", exc_info=True)
                 self.serial_port = None
@@ -109,30 +115,35 @@ class MeshcoreHandler:
     def _close_serial(self):
         with self._lock:
             if self.serial_port and self.serial_port.is_open:
+                port_name = self.config.serial_port
                 try:
                     self.serial_port.close()
+                    self.logger.info(f"Serial port {port_name} closed.")
                 except Exception as e:
-                    self.logger.error(f"Error closing serial port: {e}")
+                    self.logger.error(f"Error closing serial port {port_name}: {e}", exc_info=True)
                 finally:
                     self.serial_port = None
                     self._is_connected.clear() 
 
     def _serial_receiver_loop(self):
-        """Continuously reads from serial using Protocol Handler."""
+        """Continuously reads from serial using Protocol Handler, translates, and queues."""
         self.logger.info("Serial receiver loop started.")
         while not self.shutdown_event.is_set():
+            # --- Connection Check ---
             if not self._is_connected.is_set():
                 self.logger.warning(f"Serial port {self.config.serial_port} not connected. Attempting reconnect...")
                 if self.connect(): 
-                    self.logger.info(f"Serial device reconnected.")
+                    self.logger.info(f"Serial device reconnected successfully on {self.config.serial_port}.")
                 else:
                     self.shutdown_event.wait(self.RECONNECT_DELAY_S)
                     continue 
 
+            # --- Read and Process Data ---
             try:
                 raw_data: Optional[bytes] = None
                 with self._lock:
                      if self.serial_port and self.serial_port.is_open:
+                          # Delegate reading to protocol handler
                           raw_data = self.protocol_handler.read(self.serial_port)
                      else:
                           self._is_connected.clear()
@@ -140,9 +151,12 @@ class MeshcoreHandler:
 
                 if raw_data:
                     self.logger.debug(f"Serial RAW RX: {raw_data!r}")
+                    
+                    # Decode using the selected protocol handler
                     decoded_msg: Optional[Dict[str, Any]] = self.protocol_handler.decode(raw_data)
 
                     if decoded_msg:
+                        # Basic Translation Logic (Serial -> Meshtastic)
                         dest_meshtastic_id = decoded_msg.get("destination_meshtastic_id")
                         payload = decoded_msg.get("payload")
                         payload_json = decoded_msg.get("payload_json")
@@ -153,8 +167,10 @@ class MeshcoreHandler:
                         if isinstance(payload, str):
                             text_payload_str = payload
                         elif payload_json is not None:
-                            try: text_payload_str = json.dumps(payload_json)
-                            except Exception: pass
+                            try:
+                                text_payload_str = json.dumps(payload_json)
+                            except (TypeError, ValueError) as e:
+                                self.logger.error(f"Failed to serialize payload_json: {e}")
                         elif payload is not None: 
                              text_payload_str = str(payload) 
 
@@ -165,26 +181,32 @@ class MeshcoreHandler:
                                 "channel_index": channel_index,
                                 "want_ack": want_ack,
                             }
+
                             try:
                                 self.to_meshtastic_queue.put_nowait(meshtastic_msg)
                                 self.logger.info(f"Queued message from Serial for Meshtastic node {dest_meshtastic_id}")
                             except Full:
-                                self.logger.warning("Meshtastic send queue is full.")
+                                self.logger.warning("Meshtastic send queue is full. Dropping incoming message from Serial.")
                         else:
-                            self.logger.warning(f"Serial RX: Decoded message lacks required fields.")
+                            self.logger.warning(f"Serial RX: Decoded message lacks required fields: {decoded_msg}")
                 else:
-                    time.sleep(0.1) # Sleep if no data to prevent CPU spin
+                    # No data available from serial, sleep briefly to prevent CPU spin
+                    time.sleep(0.1)
 
-            except Exception as e:
-                self.logger.error(f"Error in serial_receiver_loop: {e}")
-                self._close_serial()
+            except serial.SerialException as e:
+                self.logger.error(f"Serial error in receiver loop ({self.config.serial_port}): {e}. Attempting to reconnect...")
+                self._close_serial() 
                 time.sleep(1) 
+            except Exception as e:
+                self.logger.error(f"Unexpected error in serial_receiver_loop: {e}", exc_info=True)
+                self._close_serial()
+                time.sleep(self.RECONNECT_DELAY_S / 2) 
 
         self.logger.info("Serial receiver loop stopped.")
 
 
     def _serial_sender_loop(self):
-        """Continuously reads from the queue and sends messages via Serial."""
+        """Continuously reads from the queue, encodes, and sends messages via Serial."""
         self.logger.info("Serial sender loop started.")
         while not self.shutdown_event.is_set():
             if not self._is_connected.is_set():
@@ -193,26 +215,39 @@ class MeshcoreHandler:
 
             try:
                 item: Optional[Dict[str, Any]] = self.to_serial_queue.get(timeout=1)
-                if not item: continue
+                if not item:
+                    continue
 
                 encoded_message: Optional[bytes] = self.protocol_handler.encode(item)
+
                 if encoded_message:
+                    # Truncate log for binary safety
                     log_preview = repr(encoded_message[:50])
                     self.logger.info(f"Serial TX -> Port: {self.config.serial_port}, Payload: {log_preview}")
 
+                    send_success = False
                     with self._lock:
                         if self.serial_port and self.serial_port.is_open:
                             try:
                                 self.serial_port.write(encoded_message)
                                 self.serial_port.flush() 
-                            except Exception as e:
-                                self.logger.error(f"Serial error during send: {e}.")
+                                send_success = True
+                            except serial.SerialException as e:
+                                self.logger.error(f"Serial error during send ({self.config.serial_port}): {e}.")
                                 self._close_serial() 
+                            except Exception as e:
+                                self.logger.error(f"Unexpected error sending Serial message: {e}", exc_info=True)
                         else:
+                             self.logger.warning(f"Serial port disconnected just before send attempt.")
                              self._is_connected.clear()
-                    self.to_serial_queue.task_done() 
+
+                    if send_success:
+                         self.to_serial_queue.task_done() 
+                    else:
+                         self.logger.error("Failed to send Serial message. Discarding.")
+                         self.to_serial_queue.task_done()
                 else:
-                    self.logger.error(f"Failed to encode message for Serial.")
+                    self.logger.error(f"Failed to encode message for Serial: {item}")
                     self.to_serial_queue.task_done() 
 
             except Empty:
