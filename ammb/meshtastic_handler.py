@@ -81,7 +81,6 @@ class MeshtasticHandler:
 
     def start_sender(self):
         if self.sender_thread and self.sender_thread.is_alive():
-            self.logger.warning("Meshtastic sender thread already started.")
             return
         self.logger.info("Starting Meshtastic sender thread...")
         self.sender_thread = threading.Thread(target=self._meshtastic_sender_loop, daemon=True, name="MeshtasticSender")
