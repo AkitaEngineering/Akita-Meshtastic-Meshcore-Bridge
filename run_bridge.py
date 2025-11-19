@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # run_bridge.py
 """
-Executable script to initialize and run the Akita Meshtastic Bridge (AMMB).
+Executable script to initialize and run the Akita Meshtastic Meshcore Bridge (AMMB).
 
 This script handles:
 - Checking for essential dependencies.
@@ -52,7 +52,7 @@ except ImportError as e:
 if __name__ == "__main__":
     # Basic logging setup until config is loaded
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.info("--- Akita Meshtastic Bridge Starting ---")
+    logging.info("--- Akita Meshtastic Meshcore Bridge Starting ---")
 
     # --- Configuration Loading ---
     config_path = os.path.join(project_root, CONFIG_FILE)
@@ -88,5 +88,5 @@ if __name__ == "__main__":
         bridge.stop()
         sys.exit(1)
 
-    logging.info("--- Akita Meshtastic Bridge Stopped ---")
+    logging.info("--- Akita Meshtastic Meshcore Bridge Stopped ---")
     sys.exit(0)
