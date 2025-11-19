@@ -1,7 +1,13 @@
 # ammb/protocol.py
 """
 Defines handlers for different **Serial** communication protocols.
-Includes JsonNewlineProtocol and RawSerialProtocol.
+
+Allows the bridge (specifically the MeshcoreHandler) to encode/decode
+messages based on the serial protocol specified in the configuration.
+
+Includes:
+- JsonNewlineProtocol: For text-based JSON (default).
+- RawSerialProtocol: For binary/companion modes (fallback).
 """
 
 import json
@@ -16,6 +22,7 @@ class MeshcoreProtocolHandler(ABC):
     Abstract base class for handling **Serial** protocols for the external device.
     """
     def __init__(self):
+        # Get logger named after the specific subclass implementing the protocol
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.logger.debug("Serial protocol handler initialized.")
 
