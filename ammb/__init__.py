@@ -1,6 +1,6 @@
 # ammb/__init__.py
 """
-Akita Meshtastic Bridge (AMMB) Package.
+Akita Meshtastic Meshcore Bridge (AMMB) Package.
 """
 
 from .bridge import Bridge
