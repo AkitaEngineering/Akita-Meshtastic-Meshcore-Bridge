@@ -1,40 +1,100 @@
 # examples/config.ini.example
-# Example configuration for the Akita Meshtastic Bridge (AMMB)
+# Example configuration for the Akita Meshtastic Meshcore Bridge (AMMB)
 # Copy this file to 'config.ini' in the project root and modify it.
 
 [DEFAULT]
 # --- Meshtastic Settings ---
+
 # Serial port for the Meshtastic device.
+# Find the correct port for your system (e.g., check Device Manager on Windows,
+# or run 'meshtastic --port list' or check /dev/tty* on Linux).
+# Example Linux: /dev/ttyUSB0
+# Example Windows: COM3
 MESHTASTIC_SERIAL_PORT = /dev/ttyUSB0
 
+
 # --- External Network Interface Settings ---
-# Options: serial (direct connection), mqtt (network broker)
+
+# Select the transport method for the non-Meshtastic side of the bridge.
+# Options:
+#   serial: Connect directly to a device (like MeshCore) via serial port.
+#   mqtt:   Connect to an MQTT broker over the network.
 EXTERNAL_TRANSPORT = serial
 
+
 # --- Serial Transport Settings ---
+# These settings are USED ONLY if EXTERNAL_TRANSPORT = serial
+
 # Serial port for the external device (e.g., MeshCore).
+# Example Linux: /dev/ttyS0, /dev/ttyAMA0
+# Example Windows: COM4, COM5
 SERIAL_PORT = /dev/ttyS0
+
+# Baud rate for the serial connection. MUST match the device's setting.
+# Common values: 9600, 19200, 38400, 57600, 115200.
 SERIAL_BAUD_RATE = 9600
 
-# Protocol handler for serial communication.
-# Options:
-#   json_newline: Expects/sends newline-terminated UTF-8 encoded JSON.
-#   raw_serial:   Reads raw binary/text bytes and forwards as Hex (For MeshCore Companion Mode).
+# Protocol handler for serial communication. Determines how messages are formatted.
+# Built-in options:
+#   json_newline: Expects/sends newline-terminated UTF-8 encoded JSON strings.
+#                 (Use this if your device talks Text/JSON)
+#   raw_serial:   Reads raw binary/text bytes and forwards them as Hex.
+#                 (Use this for MeshCore Companion Mode or binary protocols)
 SERIAL_PROTOCOL = raw_serial
 
+
 # --- MQTT Transport Settings ---
+# These settings are USED ONLY if EXTERNAL_TRANSPORT = mqtt
+
+# Address (hostname or IP) of the MQTT broker.
 MQTT_BROKER = localhost
+
+# Port number for the MQTT broker (typically 1883 for unencrypted).
 MQTT_PORT = 1883
+
+# Topic the bridge subscribes to, receiving messages destined for Meshtastic.
 MQTT_TOPIC_IN = ammb/to_meshtastic
+
+# Topic the bridge publishes messages to, originating from Meshtastic.
 MQTT_TOPIC_OUT = ammb/from_meshtastic
+
+# Username for MQTT broker authentication (leave blank for none).
 MQTT_USERNAME =
+
+# Password for MQTT broker authentication (leave blank for none).
 MQTT_PASSWORD =
+
+# Client ID for this bridge instance connecting to MQTT.
+# Should be unique if multiple bridges connect to the same broker.
 MQTT_CLIENT_ID = ammb_bridge_client
+
+# MQTT Quality of Service level for publishing and subscribing.
+# 0: At most once (fire and forget)
+# 1: At least once (acknowledgement required)
+# 2: Exactly once (more complex handshake)
 MQTT_QOS = 0
+
+# MQTT Retain flag for outgoing messages published by the bridge.
+# True: The broker keeps the last message on the topic for new subscribers.
+# False: Messages are transient and only delivered to current subscribers.
 MQTT_RETAIN_OUT = False
 
 # --- Common Bridge Settings ---
+
+# Conceptual Network ID for the external network (logging/info).
 EXTERNAL_NETWORK_ID = default_external_net
+
+# Identifier for the bridge node itself on the Meshtastic network.
+# Helps prevent message loops. Recommended: Use Meshtastic node ID format (e.g., !aabbccdd).
+# Find using 'meshtastic --info'.
 BRIDGE_NODE_ID = !ammb_bridge
+
+# Maximum size for internal message queues (to_meshtastic, to_external).
 MESSAGE_QUEUE_SIZE = 100
+
+
+# --- Logging Settings ---
+
+# Logging level for console output. Controls verbosity.
+# Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL = INFO
