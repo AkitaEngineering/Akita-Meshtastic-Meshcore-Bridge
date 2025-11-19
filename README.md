@@ -1,4 +1,5 @@
-# Akita Meshtastic-Meshcore Bridge (AMMB)
+```markdown
+# Akita Meshtastic Meshcore Bridge (AMMB)
 
 **AMMB** is a flexible and robust software bridge designed by **Akita Engineering** to facilitate seamless, bidirectional communication between Meshtastic LoRa mesh networks and external systems via Serial or MQTT.
 
@@ -52,3 +53,4 @@ This project is maintained by **Akita Engineering**.
 ## License
 This project is licensed under the **GNU General Public License v3.0**.  
 (See the LICENSE file for the full license text.)
+```
