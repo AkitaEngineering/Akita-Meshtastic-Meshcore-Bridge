@@ -14,6 +14,10 @@ from pubsub import pub
 import serial
 
 from .config_handler import BridgeConfig
+from .metrics import get_metrics
+from .health import get_health_monitor, HealthStatus
+from .validator import MessageValidator
+from .rate_limiter import RateLimiter
 
 class MeshtasticHandler:
     """Manages connection and communication with the Meshtastic network."""
@@ -31,6 +35,12 @@ class MeshtasticHandler:
         self.sender_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._is_connected = threading.Event()
+        
+        # Initialize metrics, health, validator, and rate limiter
+        self.metrics = get_metrics()
+        self.health_monitor = get_health_monitor()
+        self.validator = MessageValidator()
+        self.rate_limiter = RateLimiter(max_messages=60, time_window=60.0)  # 60 messages per minute
 
     def connect(self) -> bool:
         with self._lock:
@@ -61,9 +71,13 @@ class MeshtasticHandler:
                     user_id = my_info.get('user', {}).get('id', 'N/A')
                     self.logger.info(f"Connected to Meshtastic device. Node ID: {self.my_node_id} ('{user_id}')")
                     self._is_connected.set()
+                    self.metrics.record_meshtastic_connection()
+                    self.health_monitor.update_component("meshtastic", HealthStatus.HEALTHY, "Connected")
                 else:
                      self.logger.warning("Connected to Meshtastic, but failed to retrieve node info. Loopback detection unreliable.")
                      self._is_connected.set()
+                     self.metrics.record_meshtastic_connection()
+                     self.health_monitor.update_component("meshtastic", HealthStatus.DEGRADED, "Connected but node info unavailable")
 
                 pub.subscribe(self._on_meshtastic_receive, "meshtastic.receive", weak=False)
                 self.logger.info("Meshtastic receive callback registered.")
@@ -77,6 +91,8 @@ class MeshtasticHandler:
                 self.interface = None
                 self.my_node_id = None
                 self._is_connected.clear()
+                self.metrics.record_meshtastic_disconnection()
+                self.health_monitor.update_component("meshtastic", HealthStatus.UNHEALTHY, f"Connection failed: {e}")
                 return False
 
     def start_sender(self):
@@ -102,6 +118,8 @@ class MeshtasticHandler:
                     self.interface = None
                     self.my_node_id = None
                     self._is_connected.clear()
+                    self.metrics.record_meshtastic_disconnection()
+                    self.health_monitor.update_component("meshtastic", HealthStatus.UNHEALTHY, "Disconnected")
 
         if self.sender_thread and self.sender_thread.is_alive():
              self.sender_thread.join(timeout=5)
@@ -165,9 +183,12 @@ class MeshtasticHandler:
 
                 try:
                     self.to_external_queue.put_nowait(external_message)
+                    payload_size = len(str(translated_payload).encode('utf-8')) if translated_payload else 0
+                    self.metrics.record_meshtastic_received(payload_size)
                     self.logger.debug(f"Queued message from {sender_id_hex} for external handler.")
                 except Full:
                     self.logger.warning("External handler send queue is full.")
+                    self.metrics.record_dropped("meshtastic")
 
         except Exception as e:
             self.logger.error(f"Error in _on_meshtastic_receive callback: {e}", exc_info=True)
@@ -183,6 +204,24 @@ class MeshtasticHandler:
                      self.to_meshtastic_queue.task_done()
                      time.sleep(self.RECONNECT_DELAY_S / 2)
                      continue
+
+                # Validate and sanitize message
+                is_valid, error_msg = self.validator.validate_meshtastic_message(item)
+                if not is_valid:
+                    self.logger.warning(f"Invalid message rejected: {error_msg}")
+                    self.metrics.record_error("meshtastic")
+                    self.to_meshtastic_queue.task_done()
+                    continue
+
+                # Check rate limit
+                if not self.rate_limiter.check_rate_limit("meshtastic_sender"):
+                    self.logger.warning("Rate limit exceeded for Meshtastic sender")
+                    self.metrics.record_rate_limit_violation("meshtastic_sender")
+                    self.to_meshtastic_queue.task_done()
+                    continue
+
+                # Sanitize message
+                item = self.validator.sanitize_meshtastic_message(item)
 
                 destination = item.get('destination')
                 text_to_send = item.get('text')
@@ -204,6 +243,8 @@ class MeshtasticHandler:
                                     wantAck=want_ack
                                 )
                                 send_success = True
+                                payload_size = len(text_to_send.encode('utf-8'))
+                                self.metrics.record_meshtastic_sent(payload_size)
                             except Exception as e:
                                  self.logger.error(f"Error sending Meshtastic message: {e}")
                                  if "Not connected" in str(e): self._is_connected.clear()

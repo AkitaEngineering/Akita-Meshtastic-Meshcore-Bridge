@@ -13,6 +13,10 @@ import serial
 
 from .config_handler import BridgeConfig
 from .protocol import MeshcoreProtocolHandler, get_serial_protocol_handler
+from .metrics import get_metrics
+from .health import get_health_monitor, HealthStatus
+from .validator import MessageValidator
+from .rate_limiter import RateLimiter
 
 class MeshcoreHandler:
     """Manages Serial connection and communication with an external device."""
@@ -29,7 +33,13 @@ class MeshcoreHandler:
         self.receiver_thread: Optional[threading.Thread] = None
         self.sender_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock() 
-        self._is_connected = threading.Event() 
+        self._is_connected = threading.Event()
+        
+        # Initialize metrics, health, validator, and rate limiter
+        self.metrics = get_metrics()
+        self.health_monitor = get_health_monitor()
+        self.validator = MessageValidator()
+        self.rate_limiter = RateLimiter(max_messages=60, time_window=60.0) 
 
         if not config.serial_port or not config.serial_baud or not config.serial_protocol:
             raise ValueError("Serial transport selected, but required SERIAL configuration options are missing.")
@@ -69,7 +79,9 @@ class MeshcoreHandler:
                 )
                 if self.serial_port.is_open:
                     self.logger.info(f"Connected to Serial device on {self.config.serial_port}")
-                    self._is_connected.set() 
+                    self._is_connected.set()
+                    self.metrics.record_external_connection()
+                    self.health_monitor.update_component("external", HealthStatus.HEALTHY, "Serial connected")
                     return True
                 else:
                     self.logger.error(f"Failed to open serial port {self.config.serial_port}, but no exception was raised.")
@@ -81,11 +93,15 @@ class MeshcoreHandler:
                 self.logger.error(f"Serial error connecting to device {self.config.serial_port}: {e}")
                 self.serial_port = None
                 self._is_connected.clear()
+                self.metrics.record_external_disconnection()
+                self.health_monitor.update_component("external", HealthStatus.UNHEALTHY, f"Connection failed: {e}")
                 return False
             except Exception as e:
                 self.logger.error(f"Unexpected error connecting to serial device: {e}", exc_info=True)
                 self.serial_port = None
                 self._is_connected.clear()
+                self.metrics.record_external_disconnection()
+                self.health_monitor.update_component("external", HealthStatus.UNHEALTHY, f"Connection error: {e}")
                 return False
 
     def start_threads(self):
@@ -123,7 +139,9 @@ class MeshcoreHandler:
                     self.logger.error(f"Error closing serial port {port_name}: {e}", exc_info=True)
                 finally:
                     self.serial_port = None
-                    self._is_connected.clear() 
+                    self._is_connected.clear()
+                    self.metrics.record_external_disconnection()
+                    self.health_monitor.update_component("external", HealthStatus.UNHEALTHY, "Disconnected") 
 
     def _serial_receiver_loop(self):
         """Continuously reads from serial using Protocol Handler, translates, and queues."""
@@ -156,6 +174,22 @@ class MeshcoreHandler:
                     decoded_msg: Optional[Dict[str, Any]] = self.protocol_handler.decode(raw_data)
 
                     if decoded_msg:
+                        # Validate message
+                        is_valid, error_msg = self.validator.validate_external_message(decoded_msg)
+                        if not is_valid:
+                            self.logger.warning(f"Invalid external message rejected: {error_msg}")
+                            self.metrics.record_error("external")
+                            continue
+
+                        # Check rate limit
+                        if not self.rate_limiter.check_rate_limit("serial_receiver"):
+                            self.logger.warning("Rate limit exceeded for Serial receiver")
+                            self.metrics.record_rate_limit_violation("serial_receiver")
+                            continue
+
+                        # Sanitize message
+                        decoded_msg = self.validator.sanitize_external_message(decoded_msg)
+
                         # Basic Translation Logic (Serial -> Meshtastic)
                         dest_meshtastic_id = decoded_msg.get("destination_meshtastic_id")
                         payload = decoded_msg.get("payload")
@@ -184,9 +218,12 @@ class MeshcoreHandler:
 
                             try:
                                 self.to_meshtastic_queue.put_nowait(meshtastic_msg)
+                                payload_size = len(text_payload_str.encode('utf-8')) if text_payload_str else 0
+                                self.metrics.record_external_received(payload_size)
                                 self.logger.info(f"Queued message from Serial for Meshtastic node {dest_meshtastic_id}")
                             except Full:
                                 self.logger.warning("Meshtastic send queue is full. Dropping incoming message from Serial.")
+                                self.metrics.record_dropped("external")
                         else:
                             self.logger.warning(f"Serial RX: Decoded message lacks required fields: {decoded_msg}")
                 else:
@@ -230,8 +267,9 @@ class MeshcoreHandler:
                         if self.serial_port and self.serial_port.is_open:
                             try:
                                 self.serial_port.write(encoded_message)
-                                self.serial_port.flush() 
+                                self.serial_port.flush()
                                 send_success = True
+                                self.metrics.record_external_sent(len(encoded_message))
                             except serial.SerialException as e:
                                 self.logger.error(f"Serial error during send ({self.config.serial_port}): {e}.")
                                 self._close_serial() 

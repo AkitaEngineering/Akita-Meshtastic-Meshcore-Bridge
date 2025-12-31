@@ -7,7 +7,7 @@ import pytest
 import json
 
 # Module to test
-from ammb.protocol import get_protocol_handler, JsonNewlineProtocol, MeshcoreProtocolHandler
+from ammb.protocol import get_serial_protocol_handler, JsonNewlineProtocol, MeshcoreProtocolHandler
 
 # --- Test JsonNewlineProtocol ---
 
@@ -69,16 +69,16 @@ def test_json_newline_decode_errors(json_handler: JsonNewlineProtocol, invalid_b
 
 def test_get_protocol_handler_success():
     """Test getting a known protocol handler."""
-    handler = get_protocol_handler('json_newline')
+    handler = get_serial_protocol_handler('json_newline')
     assert isinstance(handler, JsonNewlineProtocol)
     # Test case insensitivity
-    handler_upper = get_protocol_handler('JSON_NEWLINE')
+    handler_upper = get_serial_protocol_handler('JSON_NEWLINE')
     assert isinstance(handler_upper, JsonNewlineProtocol)
 
 def test_get_protocol_handler_unsupported():
     """Test getting an unknown protocol handler raises ValueError."""
     with pytest.raises(ValueError):
-        get_protocol_handler('unknown_protocol')
+        get_serial_protocol_handler('unknown_protocol')
 
 # Add tests for other protocol handlers (e.g., PlainTextProtocol) when implemented.
 

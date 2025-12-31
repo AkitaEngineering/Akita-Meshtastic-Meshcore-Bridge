@@ -93,6 +93,20 @@ BRIDGE_NODE_ID = !ammb_bridge
 MESSAGE_QUEUE_SIZE = 100
 
 
+# --- API Settings ---
+# Enable REST API for monitoring and control
+API_ENABLED = False
+API_HOST = 127.0.0.1
+API_PORT = 8080
+
+# --- MQTT TLS/SSL Settings ---
+# Enable TLS/SSL for MQTT connections (only used if EXTERNAL_TRANSPORT = mqtt)
+MQTT_TLS_ENABLED = False
+# Path to CA certificate file (optional, for custom CA)
+MQTT_TLS_CA_CERTS = 
+# Allow insecure TLS connections (not recommended for production)
+MQTT_TLS_INSECURE = False
+
 # --- Logging Settings ---
 
 # Logging level for console output. Controls verbosity.

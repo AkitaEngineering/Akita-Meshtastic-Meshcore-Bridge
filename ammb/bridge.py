@@ -13,6 +13,9 @@ from .config_handler import BridgeConfig
 from .meshtastic_handler import MeshtasticHandler
 from .meshcore_handler import MeshcoreHandler 
 from .mqtt_handler import MQTTHandler 
+from .metrics import get_metrics
+from .health import get_health_monitor, HealthStatus
+from .api import BridgeAPIServer
 
 ExternalHandler = Union[MeshcoreHandler, MQTTHandler]
 
@@ -27,6 +30,18 @@ class Bridge:
         self.to_meshtastic_queue = Queue(maxsize=config.queue_size)
         self.to_external_queue = Queue(maxsize=config.queue_size)
         self.logger.info(f"Message queues initialized with max size: {config.queue_size}")
+
+        # Initialize metrics and health monitoring
+        self.metrics = get_metrics()
+        self.health_monitor = get_health_monitor()
+        self.health_monitor.register_component("meshtastic", HealthStatus.UNKNOWN)
+        self.health_monitor.register_component("external", HealthStatus.UNKNOWN)
+        self.health_monitor.start_monitoring()
+
+        # Initialize API server if enabled
+        self.api_server: Optional[BridgeAPIServer] = None
+        if config.api_enabled:
+            self.api_server = BridgeAPIServer(self, host=config.api_host, port=config.api_port)
 
         self.logger.info("Initializing network handlers...")
         self.meshtastic_handler: Optional[MeshtasticHandler] = None
@@ -102,6 +117,10 @@ class Bridge:
              self.stop()
              return
 
+        # Start API server if enabled
+        if self.api_server:
+            self.api_server.start()
+
         self.logger.info("Bridge background tasks started. Running... (Press Ctrl+C to stop)")
 
         try:
@@ -120,6 +139,13 @@ class Bridge:
 
         self.logger.info("Signaling shutdown to all components...")
         self.shutdown_event.set()
+
+        # Stop API server
+        if self.api_server:
+            self.api_server.stop()
+
+        # Stop health monitoring
+        self.health_monitor.stop_monitoring()
 
         self.logger.info(f"Stopping {len(self.handlers)} handlers...")
         for handler in reversed(self.handlers):

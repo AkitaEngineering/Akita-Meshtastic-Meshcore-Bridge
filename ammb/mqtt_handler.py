@@ -16,6 +16,10 @@ import paho.mqtt.enums as paho_enums # For MQTTv5 properties if used
 
 # Project dependencies
 from .config_handler import BridgeConfig
+from .metrics import get_metrics
+from .health import get_health_monitor, HealthStatus
+from .validator import MessageValidator
+from .rate_limiter import RateLimiter
 
 class MQTTHandler:
     """Manages connection and communication with an MQTT broker."""
@@ -32,6 +36,12 @@ class MQTTHandler:
         self.publisher_thread: Optional[threading.Thread] = None
         self._mqtt_connected = threading.Event()
         self._lock = threading.Lock()
+        
+        # Initialize metrics, health, validator, and rate limiter
+        self.metrics = get_metrics()
+        self.health_monitor = get_health_monitor()
+        self.validator = MessageValidator()
+        self.rate_limiter = RateLimiter(max_messages=60, time_window=60.0)
 
         if not all([config.mqtt_broker, config.mqtt_port is not None, config.mqtt_topic_in, config.mqtt_topic_out, config.mqtt_client_id, config.mqtt_qos is not None, config.mqtt_retain_out is not None]):
              raise ValueError("MQTT transport selected, but required MQTT configuration options seem missing.")
@@ -64,6 +74,18 @@ class MQTTHandler:
                 self.client.on_disconnect = self._on_disconnect
                 self.client.on_message = self._on_message
                 self.client.on_log = self._on_log
+
+                # TLS/SSL support
+                if hasattr(self.config, 'mqtt_tls_enabled') and self.config.mqtt_tls_enabled:
+                    import ssl
+                    context = ssl.create_default_context()
+                    if hasattr(self.config, 'mqtt_tls_ca_certs') and self.config.mqtt_tls_ca_certs:
+                        context.load_verify_locations(self.config.mqtt_tls_ca_certs)
+                    if hasattr(self.config, 'mqtt_tls_insecure') and self.config.mqtt_tls_insecure:
+                        context.check_hostname = False
+                        context.verify_mode = ssl.CERT_NONE
+                    self.client.tls_set_context(context)
+                    self.logger.info("MQTT TLS/SSL enabled")
 
                 if self.config.mqtt_username:
                     self.client.username_pw_set(self.config.mqtt_username, self.config.mqtt_password)
@@ -102,6 +124,8 @@ class MQTTHandler:
                 except Exception: pass
                 self.client = None
             self._mqtt_connected.clear()
+            self.metrics.record_external_disconnection()
+            self.health_monitor.update_component("external", HealthStatus.UNHEALTHY, "Stopped")
         self.logger.info("MQTT handler stopped.")
 
     # --- MQTT Callbacks (Executed by Paho's Network Thread) ---
@@ -111,6 +135,8 @@ class MQTTHandler:
         if rc == 0:
             self.logger.info(f"Successfully connected to MQTT broker: {self.config.mqtt_broker} ({connack_str})")
             self._mqtt_connected.set()
+            self.metrics.record_external_connection()
+            self.health_monitor.update_component("external", HealthStatus.HEALTHY, "MQTT connected")
             try:
                 client.subscribe(self.config.mqtt_topic_in, qos=self.config.mqtt_qos)
             except Exception as e:
@@ -118,11 +144,23 @@ class MQTTHandler:
         else:
             self.logger.error(f"MQTT connection failed. Result code: {rc} - {connack_str}")
             self._mqtt_connected.clear()
+            self.metrics.record_external_disconnection()
+            self.health_monitor.update_component("external", HealthStatus.UNHEALTHY, f"Connection failed: {connack_str}")
 
     def _on_disconnect(self, client, userdata, rc, properties=None):
         self._mqtt_connected.clear()
+        self.metrics.record_external_disconnection()
         if rc != 0:
             self.logger.warning(f"Unexpected MQTT disconnection. RC: {rc}")
+            self.health_monitor.update_component("external", HealthStatus.UNHEALTHY, f"Unexpected disconnect: RC {rc}")
+        else:
+            self.health_monitor.update_component("external", HealthStatus.UNHEALTHY, "Disconnected")
+
+    def _on_log(self, client, userdata, level, buf):
+        """MQTT client logging callback."""
+        # Only log at DEBUG level to avoid noise
+        if level <= paho_mqtt.MQTT_LOG_DEBUG:
+            self.logger.debug(f"MQTT: {buf}")
 
     def _on_message(self, client, userdata, msg: paho_mqtt.MQTTMessage):
         try:
@@ -132,6 +170,22 @@ class MQTTHandler:
             try:
                 payload_str = payload_bytes.decode('utf-8', errors='replace')
                 mqtt_data = json.loads(payload_str)
+                
+                # Validate message
+                is_valid, error_msg = self.validator.validate_external_message(mqtt_data)
+                if not is_valid:
+                    self.logger.warning(f"Invalid MQTT message rejected: {error_msg}")
+                    self.metrics.record_error("external")
+                    return
+
+                # Check rate limit
+                if not self.rate_limiter.check_rate_limit("mqtt_receiver"):
+                    self.logger.warning("Rate limit exceeded for MQTT receiver")
+                    self.metrics.record_rate_limit_violation("mqtt_receiver")
+                    return
+
+                # Sanitize message
+                mqtt_data = self.validator.sanitize_external_message(mqtt_data)
                 
                 dest_meshtastic_id = mqtt_data.get("destination_meshtastic_id")
                 payload = mqtt_data.get("payload")
@@ -157,9 +211,12 @@ class MQTTHandler:
                     }
                     try:
                         self.to_meshtastic_queue.put_nowait(meshtastic_msg)
+                        payload_size = len(text_payload_str.encode('utf-8')) if text_payload_str else 0
+                        self.metrics.record_external_received(payload_size)
                         self.logger.info(f"Queued MQTT message for {dest_meshtastic_id}")
                     except Full:
                         self.logger.warning("Meshtastic send queue full.")
+                        self.metrics.record_dropped("external")
             except Exception as e:
                 self.logger.error(f"Error processing MQTT message: {e}")
 
@@ -195,6 +252,7 @@ class MQTTHandler:
                     with self._lock:
                          if self.client and self.client.is_connected():
                               self.client.publish(topic, payload=payload_str, qos=qos, retain=self.config.mqtt_retain_out)
+                              self.metrics.record_external_sent(len(payload_str.encode('utf-8')))
                          else:
                               self._mqtt_connected.clear()
                     

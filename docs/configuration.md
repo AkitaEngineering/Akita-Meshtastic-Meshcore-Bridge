@@ -1,10 +1,12 @@
-# Configuration (`config.ini`)
+# Configuration Guide
 
-The Akita Meshtastic-Meshcore Bridge (AMMB) uses a configuration file named `config.ini` located in the project's root directory to control its behavior. You should copy `examples/config.ini.example` to `config.ini` and modify it according to your setup.
+**Last Updated: December 31, 2025**
 
-All settings are currently placed under the `[DEFAULT]` section.
+The Akita Meshtastic Meshcore Bridge (AMMB) uses a configuration file named `config.ini` located in the project's root directory. Copy `examples/config.ini.example` to `config.ini` and modify it according to your setup.
 
-## Settings Details
+All settings are placed under the `[DEFAULT]` section.
+
+## Configuration Sections
 
 ### Meshtastic Settings
 
@@ -16,58 +18,223 @@ All settings are currently placed under the `[DEFAULT]` section.
         * Use the command `meshtastic --port list`.
         * Check your operating system's device manager or `/dev` directory.
     * **Required:** Yes
+    * **Default:** `/dev/ttyUSB0`
 
-### Meshcore Settings
+### External Transport Selection
 
-* **`MESHCORE_SERIAL_PORT`**
-    * **Description:** The serial port where your MeshCore device is connected.
+* **`EXTERNAL_TRANSPORT`**
+    * **Description:** Selects the transport method for the external system connection.
+    * **Supported Values:**
+        * `serial`: Connect via serial port (for devices like MeshCore)
+        * `mqtt`: Connect via MQTT broker
+    * **Required:** Yes
+    * **Default:** `serial`
+
+### Serial Transport Settings
+
+These settings are only used when `EXTERNAL_TRANSPORT = serial`.
+
+* **`SERIAL_PORT`**
+    * **Description:** The serial port where your external device (e.g., MeshCore) is connected.
     * **Example Linux:** `/dev/ttyS0`, `/dev/ttyAMA0` (Raspberry Pi)
     * **Example Windows:** `COM1`, `COM5`
-    * **Required:** Yes
+    * **Required:** Yes (when using serial transport)
+    * **Default:** `/dev/ttyS0`
 
-* **`MESHCORE_BAUD_RATE`**
-    * **Description:** The baud rate (speed) for the serial communication with the MeshCore device. **This must exactly match the baud rate configured on the MeshCore device itself.**
+* **`SERIAL_BAUD_RATE`**
+    * **Description:** The baud rate (speed) for serial communication. This must exactly match the device's baud rate setting.
     * **Common Values:** `9600`, `19200`, `38400`, `57600`, `115200`
+    * **Required:** Yes (when using serial transport)
     * **Default:** `9600`
-    * **Required:** Yes
 
-* **`MESHCORE_PROTOCOL`**
-    * **Description:** Specifies how messages are formatted when sent and received over the MeshCore serial connection.
+* **`SERIAL_PROTOCOL`**
+    * **Description:** Specifies how messages are formatted over the serial connection.
     * **Supported Values:**
-        * `json_newline`: Messages are expected to be single lines of UTF-8 encoded JSON text, terminated by a newline character (`\n`). This is the default and recommended protocol for structured data exchange. See `docs/architecture.md` for the expected JSON structure.
-        * *(Future protocols like `plain_text` could be added)*
+        * `json_newline`: Messages are newline-terminated UTF-8 JSON strings (default for structured data)
+        * `raw_serial`: Raw binary/text bytes forwarded as hex (for MeshCore Companion Mode)
+    * **Required:** Yes (when using serial transport)
     * **Default:** `json_newline`
-    * **Required:** Yes (effectively, as the default is used if missing)
 
-* **`MESHCORE_NETWORK_ID`**
-    * **Description:** A conceptual identifier for the MeshCore network this bridge is connected to. Currently used primarily for logging purposes but could be incorporated into more advanced translation or routing logic in the future.
-    * **Default:** `ammb_default_net`
+### MQTT Transport Settings
+
+These settings are only used when `EXTERNAL_TRANSPORT = mqtt`.
+
+* **`MQTT_BROKER`**
+    * **Description:** Address (hostname or IP) of the MQTT broker.
+    * **Example:** `localhost`, `192.168.1.100`, `mqtt.example.com`
+    * **Required:** Yes (when using MQTT transport)
+    * **Default:** `localhost`
+
+* **`MQTT_PORT`**
+    * **Description:** Port number for the MQTT broker.
+    * **Common Values:** `1883` (unencrypted), `8883` (TLS/SSL)
+    * **Required:** Yes (when using MQTT transport)
+    * **Default:** `1883`
+
+* **`MQTT_TOPIC_IN`**
+    * **Description:** MQTT topic the bridge subscribes to, receiving messages destined for Meshtastic.
+    * **Example:** `ammb/to_meshtastic`
+    * **Required:** Yes (when using MQTT transport)
+    * **Default:** `ammb/to_meshtastic`
+
+* **`MQTT_TOPIC_OUT`**
+    * **Description:** MQTT topic the bridge publishes messages to, originating from Meshtastic.
+    * **Example:** `ammb/from_meshtastic`
+    * **Required:** Yes (when using MQTT transport)
+    * **Default:** `ammb/from_meshtastic`
+
+* **`MQTT_USERNAME`**
+    * **Description:** Username for MQTT broker authentication. Leave blank for no authentication.
     * **Required:** No
+    * **Default:** (empty)
+
+* **`MQTT_PASSWORD`**
+    * **Description:** Password for MQTT broker authentication. Leave blank if no authentication.
+    * **Required:** No
+    * **Default:** (empty)
+
+* **`MQTT_CLIENT_ID`**
+    * **Description:** Client ID for this bridge instance. Should be unique if multiple bridges connect to the same broker.
+    * **Required:** No
+    * **Default:** `ammb_bridge_client`
+
+* **`MQTT_QOS`**
+    * **Description:** MQTT Quality of Service level for publishing and subscribing.
+    * **Supported Values:**
+        * `0`: At most once (fire and forget)
+        * `1`: At least once (acknowledgement required)
+        * `2`: Exactly once (more complex handshake)
+    * **Required:** No
+    * **Default:** `0`
+
+* **`MQTT_RETAIN_OUT`**
+    * **Description:** MQTT retain flag for outgoing messages.
+    * **Values:**
+        * `True`: Broker keeps last message for new subscribers
+        * `False`: Messages are transient
+    * **Required:** No
+    * **Default:** `False`
+
+* **`MQTT_TLS_ENABLED`**
+    * **Description:** Enable TLS/SSL for MQTT connections.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `False`
+
+* **`MQTT_TLS_CA_CERTS`**
+    * **Description:** Path to CA certificate file for TLS verification. Leave blank to use system default.
+    * **Example:** `/path/to/ca-cert.pem`
+    * **Required:** No
+    * **Default:** (empty)
+
+* **`MQTT_TLS_INSECURE`**
+    * **Description:** Allow insecure TLS connections (disables certificate verification). Not recommended for production.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `False`
+
+### API Settings
+
+* **`API_ENABLED`**
+    * **Description:** Enable the REST API server for monitoring and control.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `False`
+
+* **`API_HOST`**
+    * **Description:** Host address for the API server.
+    * **Example:** `127.0.0.1` (localhost only), `0.0.0.0` (all interfaces)
+    * **Required:** No
+    * **Default:** `127.0.0.1`
+
+* **`API_PORT`**
+    * **Description:** Port number for the API server.
+    * **Range:** 1-65535
+    * **Required:** No
+    * **Default:** `8080`
 
 ### Bridge Settings
 
+* **`EXTERNAL_NETWORK_ID`**
+    * **Description:** Conceptual identifier for the external network. Used primarily for logging.
+    * **Required:** No
+    * **Default:** `default_external_net`
+
 * **`BRIDGE_NODE_ID`**
-    * **Description:** The identifier the bridge uses for itself when interacting on the Meshtastic network. This is primarily used to detect and ignore messages originating from the bridge itself, preventing infinite loops where a message is relayed back and forth.
-    * **Format:** It's strongly recommended to use the Meshtastic node ID format (a hexadecimal string starting with `!`, e.g., `!a1b2c3d4`).
+    * **Description:** Identifier for the bridge node on the Meshtastic network. Used to prevent message loops.
+    * **Format:** Recommended to use Meshtastic node ID format (e.g., `!a1b2c3d4`)
     * **Finding your ID:** Use `meshtastic --info` when connected to your device.
-    * **Recommendation:** Set this explicitly to the Meshtastic node ID of the device the bridge is running on. If left blank, the bridge attempts to retrieve the ID automatically upon connection, but setting it ensures consistency.
+    * **Required:** No
     * **Default:** `!ammb_bridge`
-    * **Required:** No (but highly recommended)
 
 * **`MESSAGE_QUEUE_SIZE`**
-    * **Description:** The maximum number of messages that can be held in each internal queue (`to_meshtastic` and `to_meshcore`) waiting to be sent. If a message arrives and the corresponding outgoing queue is full, the message will be dropped, and a warning will be logged.
-    * **Default:** `100`
+    * **Description:** Maximum number of messages in each internal queue. Messages are dropped if queue is full.
+    * **Range:** 1 and above
     * **Required:** No
+    * **Default:** `100`
 
 ### Logging Settings
 
 * **`LOG_LEVEL`**
-    * **Description:** Controls the minimum severity level of messages that will be logged to the console.
-    * **Supported Values (from least to most verbose):**
-        * `CRITICAL`
-        * `ERROR`
-        * `WARNING`
-        * `INFO`
-        * `DEBUG`
-    * **Default:** `INFO`
+    * **Description:** Minimum severity level for console logging.
+    * **Supported Values (least to most verbose):**
+        * `CRITICAL`: Only critical errors
+        * `ERROR`: Errors and above
+        * `WARNING`: Warnings and above
+        * `INFO`: General information and above (recommended)
+        * `DEBUG`: All messages including detailed debugging
     * **Required:** No
+    * **Default:** `INFO`
+
+## Configuration File Format
+
+The configuration file uses INI format:
+
+```ini
+[DEFAULT]
+MESHTASTIC_SERIAL_PORT = /dev/ttyUSB0
+EXTERNAL_TRANSPORT = serial
+SERIAL_PORT = /dev/ttyS0
+SERIAL_BAUD_RATE = 9600
+SERIAL_PROTOCOL = json_newline
+LOG_LEVEL = INFO
+```
+
+## Configuration Validation
+
+The configuration handler validates all settings at startup:
+
+- Required fields are checked
+- Numeric values are validated (ranges, types)
+- Enum values are checked against allowed options
+- Port numbers are validated (1-65535)
+- Boolean values are parsed correctly
+
+If validation fails, the bridge will not start and will log the specific error.
+
+## Environment-Specific Configuration
+
+For different environments (development, production), you can:
+
+1. Use different `config.ini` files
+2. Use environment variables (requires code modification)
+3. Use configuration management tools
+
+## Security Considerations
+
+- **MQTT Passwords**: Store securely, consider using environment variables for sensitive data
+- **TLS Certificates**: Use proper certificate paths and avoid insecure mode in production
+- **API Access**: Restrict API host to localhost (127.0.0.1) unless firewall protection is in place
+- **Serial Ports**: Ensure proper permissions are set on serial devices
+
+## Troubleshooting Configuration
+
+Common configuration issues:
+
+1. **Invalid port names**: Verify port exists and is accessible
+2. **Wrong baud rate**: Must match device setting exactly
+3. **Missing required fields**: Check error messages for specific missing fields
+4. **Invalid enum values**: Check allowed values in this documentation
+5. **Port conflicts**: Ensure API port is not already in use
+
+See `docs/usage.md` for more troubleshooting guidance.

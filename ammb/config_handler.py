@@ -37,6 +37,16 @@ class BridgeConfig(NamedTuple):
     bridge_node_id: str
     queue_size: int
     log_level: str
+    
+    # API Settings (Optional)
+    api_enabled: Optional[bool] = False
+    api_host: Optional[str] = '127.0.0.1'
+    api_port: Optional[int] = 8080
+    
+    # MQTT TLS Settings (Optional)
+    mqtt_tls_enabled: Optional[bool] = False
+    mqtt_tls_ca_certs: Optional[str] = None
+    mqtt_tls_insecure: Optional[bool] = False
 
 CONFIG_FILE = "config.ini"
 
@@ -59,6 +69,12 @@ DEFAULT_CONFIG = {
     'BRIDGE_NODE_ID': '!ammb_bridge',
     'MESSAGE_QUEUE_SIZE': '100',
     'LOG_LEVEL': 'INFO',
+    'API_ENABLED': 'False',
+    'API_HOST': '127.0.0.1',
+    'API_PORT': '8080',
+    'MQTT_TLS_ENABLED': 'False',
+    'MQTT_TLS_CA_CERTS': '',
+    'MQTT_TLS_INSECURE': 'False',
 }
 
 VALID_LOG_LEVELS = {'CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'}
@@ -170,6 +186,23 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
                 logger.error(f"Invalid integer/boolean value in MQTT configuration: {e}")
                 return None
 
+        # Parse API settings
+        api_enabled = cfg_section.getboolean('API_ENABLED', fallback=False)
+        api_host = cfg_section.get('API_HOST', fallback='127.0.0.1')
+        try:
+            api_port = cfg_section.getint('API_PORT', fallback=8080)
+            if api_port <= 0 or api_port > 65535:
+                logger.warning(f"Invalid API_PORT {api_port}, using default 8080")
+                api_port = 8080
+        except ValueError:
+            logger.warning("Invalid API_PORT, using default 8080")
+            api_port = 8080
+
+        # Parse MQTT TLS settings
+        mqtt_tls_enabled = cfg_section.getboolean('MQTT_TLS_ENABLED', fallback=False)
+        mqtt_tls_ca_certs = cfg_section.get('MQTT_TLS_CA_CERTS', fallback='').strip() or None
+        mqtt_tls_insecure = cfg_section.getboolean('MQTT_TLS_INSECURE', fallback=False)
+
         bridge_config = BridgeConfig(
             meshtastic_port=meshtastic_port,
             external_transport=external_transport,
@@ -188,7 +221,13 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             external_network_id=external_network_id,
             bridge_node_id=bridge_node_id,
             queue_size=queue_size,
-            log_level=log_level
+            log_level=log_level,
+            api_enabled=api_enabled,
+            api_host=api_host,
+            api_port=api_port,
+            mqtt_tls_enabled=mqtt_tls_enabled,
+            mqtt_tls_ca_certs=mqtt_tls_ca_certs,
+            mqtt_tls_insecure=mqtt_tls_insecure,
         )
         logger.debug(f"Configuration loaded: {bridge_config}")
         return bridge_config

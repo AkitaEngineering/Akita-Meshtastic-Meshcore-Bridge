@@ -1,69 +1,263 @@
-# Usage Guide
+# Architecture Documentation
 
-This guide explains how to run and interact with the Akita Meshtastic-Meshcore Bridge (AMMB).
+**Last Updated: December 31, 2025**
 
-## Prerequisites
+This document describes the architecture and design of the Akita Meshtastic Meshcore Bridge (AMMB).
 
-Ensure you have completed the steps in the [Installation](README.md#installation) section of the main README, including:
-1.  Cloning the repository.
-2.  Setting up a Python virtual environment (recommended).
-3.  Installing dependencies (`pip install -r requirements.txt`).
-4.  Creating and configuring your `config.ini` file.
+## Overview
 
-## Running the Bridge
+AMMB is a bidirectional bridge that connects Meshtastic LoRa mesh networks with external systems via Serial or MQTT. The bridge operates as a message relay, translating and forwarding messages between the two networks while maintaining connection health and providing monitoring capabilities.
 
-1.  **Navigate to the project root directory** in your terminal or command prompt (the directory containing `run_bridge.py`).
-2.  **Activate your virtual environment** (if you created one):
-    * Linux/macOS: `source venv/bin/activate`
-    * Windows: `.\venv\Scripts\activate`
-3.  **Run the bridge script:**
-    ```bash
-    python run_bridge.py
-    ```
+## System Architecture
 
-## Expected Output
+### Core Components
 
-Upon successful startup, you should see log messages similar to this in your console:
+1. **Bridge Orchestrator** (`ammb/bridge.py`)
+   - Main coordination component
+   - Manages handler lifecycle
+   - Coordinates message queues
+   - Handles graceful shutdown
+   - Integrates metrics, health monitoring, and API server
 
-YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - utils - Starting Akita Meshtastic-Meshcore Bridge (Serial Refactor)YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - config_handler - Configuration loaded successfully from config.iniYYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - utils - Logging level set to INFOYYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - bridge - Initializing AMMB...YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - meshtastic_handler - Attempting connection to Meshtastic on /dev/ttyUSB0...YYYY-MM-DD HH:MM:SS,mmm - Meshtastic Input - INFO - meshtastic.serial_interface - Connected to radio... (Meshtastic connection details) ...YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - meshtastic_handler - Connected to Meshtastic device. Node ID: 0xdeadbeef ('!deadbeef')YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - meshtastic_handler - Meshtastic receive callback registered.YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - meshcore_handler - Attempting connection to Meshcore on /dev/ttyS0 at 9600 baud...YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - meshcore_handler - Connected to Meshcore device on /dev/ttyS0YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - bridge - Starting handler threads...YYYY-MM-DD HH:MM:SS,mmm - MainThread - INFO - bridge - Bridge threads started. Running... (Press Ctrl+C to stop)
-* The bridge will attempt to connect to both the Meshtastic and MeshCore devices based on your `config.ini`.
-* If a connection fails initially (e.g., device not plugged in), it will log a warning or error and periodically retry in the background.
-* Once running, it will log messages received and sent on both networks (depending on your `LOG_LEVEL`).
+2. **Meshtastic Handler** (`ammb/meshtastic_handler.py`)
+   - Manages connection to Meshtastic device
+   - Receives messages from Meshtastic network
+   - Sends messages to Meshtastic network
+   - Implements loopback prevention
+   - Integrates with metrics, health monitoring, validation, and rate limiting
 
-## Monitoring
+3. **External Handlers**
+   - **Serial Handler** (`ammb/meshcore_handler.py`): Manages serial port communication
+   - **MQTT Handler** (`ammb/mqtt_handler.py`): Manages MQTT broker communication
+   - Both handlers support bidirectional message flow
+   - Both integrate with metrics, health monitoring, validation, and rate limiting
 
-* **Console Logs:** Keep an eye on the terminal where you ran `python run_bridge.py`. This is the primary way to see what the bridge is doing, including received messages, sent messages, connection attempts, and errors.
-* **Log Level:** If you need more detailed information for troubleshooting, stop the bridge (`Ctrl+C`), edit `config.ini`, set `LOG_LEVEL = DEBUG`, and restart the bridge. Remember to set it back to `INFO` or `WARNING` for normal operation to avoid excessive output.
+4. **Protocol Handlers** (`ammb/protocol.py`)
+   - Abstract base class for serial protocols
+   - Implementations: `JsonNewlineProtocol`, `RawSerialProtocol`
+   - Extensible for custom protocols
 
-## Stopping the Bridge
+5. **Configuration Handler** (`ammb/config_handler.py`)
+   - Loads and validates configuration from `config.ini`
+   - Provides type-safe configuration access
+   - Validates all settings
 
-* Press `Ctrl+C` in the terminal where the bridge is running.
-* The bridge will detect this signal and attempt a graceful shutdown, closing connections and stopping threads. You should see shutdown messages in the log.
+6. **Metrics Collector** (`ammb/metrics.py`)
+   - Thread-safe metrics collection
+   - Tracks message statistics (received, sent, dropped, errors)
+   - Tracks connection statistics (uptime, connection counts)
+   - Rate limit violation tracking
+   - Global singleton instance
 
-## Troubleshooting Common Issues
+7. **Health Monitor** (`ammb/health.py`)
+   - Real-time component health tracking
+   - Health status levels: HEALTHY, DEGRADED, UNHEALTHY, UNKNOWN
+   - Automatic stale component detection
+   - Background monitoring thread
+   - Global singleton instance
 
-* **`Error connecting to Meshtastic device: [Errno 2] No such file or directory: '/dev/ttyUSB0'` (or similar)**
-    * **Cause:** The specified `MESHTASTIC_SERIAL_PORT` in `config.ini` is incorrect, or the device is not connected/detected by the OS.
-    * **Solution:** Verify the port name using `meshtastic --port list` or OS tools. Ensure the device is plugged in and drivers are installed. Check permissions (Linux users might need to be in the `dialout` group: `sudo usermod -a -G dialout $USER`).
+8. **REST API Server** (`ammb/api.py`)
+   - HTTP server for monitoring and control
+   - Provides endpoints for health, metrics, status, and info
+   - Thread-safe implementation
+   - Optional component (enabled via configuration)
 
-* **`Error connecting to Meshcore device: [Errno 2] No such file or directory: '/dev/ttyS0'` (or similar)**
-    * **Cause:** The specified `MESHCORE_SERIAL_PORT` in `config.ini` is incorrect, or the device is not connected/detected.
-    * **Solution:** Verify the port name using OS tools. Ensure the device is plugged in and drivers are installed. Check permissions.
+9. **Message Validator** (`ammb/validator.py`)
+   - Validates message format and content
+   - Sanitizes input to prevent injection attacks
+   - Validates Meshtastic node IDs
+   - Validates message length and structure
 
-* **`serial.SerialException: Could not configure port: (5, 'Input/output error')` (or similar permission error)**
-    * **Cause:** The user running the script doesn't have permission to access the serial port.
-    * **Solution (Linux):** Add your user to the `dialout` group: `sudo usermod -a -G dialout $USER`. You may need to log out and log back in for the change to take effect.
+10. **Rate Limiter** (`ammb/rate_limiter.py`)
+    - Token bucket rate limiting algorithm
+    - Prevents message flooding
+    - Per-source rate limiting
+    - Configurable limits
 
-* **No messages received from Meshcore / Gibberish received from Meshcore:**
-    * **Cause 1:** Incorrect `MESHCORE_BAUD_RATE` in `config.ini`. It *must* match the MeshCore device's setting.
-    * **Cause 2:** Incorrect `MESHCORE_PROTOCOL` selected, or the MeshCore device is not sending data in the expected format (e.g., sending plain text when `json_newline` is expected).
-    * **Cause 3:** Wiring issue between the computer and the MeshCore device.
-    * **Solution:** Verify baud rate. Verify the protocol setting and the actual data format being sent by MeshCore. Check physical connections. Use the `meshcore_simulator.py` example or another serial terminal program to test communication directly with the MeshCore device.
+11. **Message Logger** (`ammb/message_logger.py`)
+    - Optional message persistence to file
+    - JSON line format
+    - Automatic log rotation
+    - Background worker thread
 
-* **Messages dropped (`Queue is full` warnings):**
-    * **Cause:** Messages are arriving faster than they can be sent out on the other network, or the destination network/device is unresponsive.
-    * **Solution:** Investigate potential bottlenecks on the destination network. Consider increasing `MESSAGE_QUEUE_SIZE` in `config.ini` if temporary bursts are expected, but this won't solve underlying rate issues.
+## Message Flow
 
-* **JSONDecodeError / UnicodeDecodeError:**
-    * **Cause:** The bridge received data over the MeshCore serial port that was not valid JSON (when using `json_newline` protocol) or not valid UTF-8 text.
-    * **Solution:** Ensure the MeshCore device is sending correctly formatted, UTF-8 encoded JSON strings, terminated by a newline. Check the `Meshcore RX: Received non-JSON data` or `Received non-UTF8 data` log messages for clues.
+### Meshtastic to External
+
+1. Meshtastic device receives message on mesh network
+2. Meshtastic Handler receives message via pubsub callback
+3. Message is validated and sanitized
+4. Rate limiting is checked
+5. Message is translated to bridge format
+6. Metrics are recorded
+7. Message is queued to external handler
+8. External handler (Serial or MQTT) sends message
+
+### External to Meshtastic
+
+1. External system sends message (via Serial or MQTT)
+2. External Handler receives message
+3. Message is validated and sanitized
+4. Rate limiting is checked
+5. Message is translated to Meshtastic format
+6. Metrics are recorded
+7. Message is queued to Meshtastic handler
+8. Meshtastic Handler sends message to mesh network
+
+## Threading Model
+
+The bridge uses multiple threads for concurrent operation:
+
+- **Main Thread**: Bridge orchestration and main loop
+- **Meshtastic Sender Thread**: Sends messages to Meshtastic network
+- **Serial Receiver Thread**: Reads from serial port
+- **Serial Sender Thread**: Writes to serial port
+- **MQTT Publisher Thread**: Publishes messages to MQTT broker
+- **MQTT Network Thread**: Handles MQTT client network operations (managed by paho-mqtt)
+- **Health Monitor Thread**: Background health checking
+- **API Server Thread**: HTTP request handling
+- **Message Logger Thread**: Background message logging (if enabled)
+
+All threads are daemon threads except the main thread, ensuring clean shutdown.
+
+## Message Queues
+
+The bridge uses two internal queues:
+
+- **to_meshtastic_queue**: Messages destined for Meshtastic network
+- **to_external_queue**: Messages destined for external system
+
+Both queues are thread-safe and have configurable maximum sizes. When a queue is full, incoming messages are dropped with a warning logged.
+
+## Connection Management
+
+### Automatic Reconnection
+
+All handlers implement automatic reconnection logic:
+
+- **Meshtastic Handler**: Attempts reconnection on connection loss
+- **Serial Handler**: Continuously attempts reconnection in receiver loop
+- **MQTT Handler**: Uses paho-mqtt's built-in reconnection with callbacks
+
+Reconnection attempts are logged and tracked in metrics.
+
+### Health Monitoring
+
+The health monitor tracks the status of all components:
+
+- **HEALTHY**: Component is connected and functioning normally
+- **DEGRADED**: Component has issues but is partially functional
+- **UNHEALTHY**: Component is disconnected or has critical errors
+- **UNKNOWN**: Component status is not yet determined
+
+Health status is updated automatically when connections change.
+
+## Security Features
+
+1. **Message Validation**: All messages are validated before processing
+2. **Input Sanitization**: Strings are sanitized to remove control characters
+3. **Rate Limiting**: Prevents message flooding attacks
+4. **Node ID Validation**: Prevents message spoofing
+5. **TLS/SSL Support**: Secure MQTT connections with certificate validation
+
+## Performance Considerations
+
+1. **Thread-Safe Operations**: All shared data structures use locks
+2. **Non-Blocking Logging**: Message logging uses background thread
+3. **Efficient Rate Limiting**: Token bucket algorithm with O(1) operations
+4. **Queue Management**: Bounded queues prevent memory issues
+5. **Connection Pooling**: Reuses connections where possible
+
+## Extensibility
+
+### Adding New Protocols
+
+To add a new serial protocol:
+
+1. Create a class inheriting from `MeshcoreProtocolHandler`
+2. Implement `read()`, `encode()`, and `decode()` methods
+3. Register in `get_serial_protocol_handler()` factory function
+4. Add configuration option
+
+### Adding New Transports
+
+To add a new external transport:
+
+1. Create a handler class similar to `MeshcoreHandler` or `MQTTHandler`
+2. Implement connection, send, and receive methods
+3. Integrate with metrics, health, validation, and rate limiting
+4. Add to `Bridge` class initialization
+5. Update configuration handler
+
+## Error Handling
+
+The bridge implements comprehensive error handling:
+
+- **Connection Errors**: Logged and trigger reconnection attempts
+- **Message Errors**: Logged and tracked in metrics
+- **Validation Errors**: Messages are rejected with warnings
+- **Rate Limit Violations**: Logged and tracked separately
+- **Critical Errors**: Logged with full stack traces
+
+All errors are logged with appropriate severity levels and tracked in metrics.
+
+## Monitoring and Observability
+
+### Metrics
+
+The metrics collector tracks:
+
+- Message counts (received, sent, dropped, errors)
+- Byte counts (received, sent)
+- Connection statistics (uptime, connection/disconnection counts)
+- Rate limit violations
+- Timestamps of last activity
+
+### Health Status
+
+The health monitor provides:
+
+- Overall system health status
+- Per-component health status
+- Health check timestamps
+- Component-specific details
+
+### REST API
+
+The REST API provides programmatic access to:
+
+- Health status (`GET /api/health`)
+- Metrics (`GET /api/metrics`)
+- Combined status (`GET /api/status`)
+- Bridge information (`GET /api/info`)
+- Control actions (`POST /api/control`)
+
+## Configuration
+
+All configuration is loaded from `config.ini` at startup. The configuration handler validates all settings and provides type-safe access. See `docs/configuration.md` for detailed configuration documentation.
+
+## Logging
+
+The bridge uses Python's standard logging module with configurable levels:
+
+- **CRITICAL**: Critical errors that may cause shutdown
+- **ERROR**: Errors that don't stop operation
+- **WARNING**: Warnings about potential issues
+- **INFO**: General operational information
+- **DEBUG**: Detailed debugging information
+
+Log format includes timestamp, thread name, level, module, and message.
+
+## Shutdown Sequence
+
+On shutdown (Ctrl+C or exception):
+
+1. Shutdown event is set
+2. API server is stopped
+3. Health monitoring is stopped
+4. All handlers are stopped (in reverse order)
+5. Connections are closed
+6. Threads are joined with timeout
+7. Final log messages are written
+
+The shutdown sequence ensures all resources are properly cleaned up.
