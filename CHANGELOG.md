@@ -4,11 +4,11 @@
 
 ## Version 2.0.0 - Comprehensive Code Review and Enhancements (December 31, 2025)
 
-### 🐛 Bug Fixes
+### Bug Fixes
 - **Fixed test file errors**: Corrected incomplete string in `test_config_handler.py` and wrong function name in `test_protocol.py`
 - **Fixed missing method**: Added `_on_log` method to `MQTTHandler` that was referenced but not defined
 
-### ✨ New Features
+### New Features
 
 #### 1. Metrics and Statistics Collection
 - **New Module**: `ammb/metrics.py`
@@ -70,7 +70,7 @@
   - Configurable insecure mode (for testing)
   - Automatic TLS context creation
 
-### 🔧 Enhancements
+### Enhancements
 
 #### Configuration System
 - Added API configuration options:
@@ -111,32 +111,32 @@
 - Enhanced shutdown sequence
 - Better error handling and logging
 
-### 📊 Performance Optimizations
+### Performance Optimizations
 - Thread-safe metrics collection
 - Non-blocking message logging
 - Efficient rate limiting algorithm
 - Optimized health check intervals
 - Reduced lock contention
 
-### 🛡️ Security Enhancements
+### Security Enhancements
 - Message validation prevents malformed data
 - Rate limiting prevents message flooding
 - TLS/SSL support for secure MQTT
 - Input sanitization prevents injection attacks
 - Node ID validation prevents spoofing
 
-### 📝 Documentation
+### Documentation
 - Updated README.md with new features
 - Enhanced configuration examples
 - Added API endpoint documentation
 - Improved code comments and docstrings
 
-### 🧪 Testing
+### Testing
 - Fixed broken test files
 - All modules compile successfully
 - No linter errors
 
-### 🔄 Backward Compatibility
+### Backward Compatibility
 - All new features are optional and configurable
 - Default behavior maintains backward compatibility
 - Existing configurations continue to work

@@ -100,14 +100,12 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
 
         if 'DEFAULT' not in config.sections():
              logger.warning(f"Configuration file '{config_path}' lacks the [DEFAULT] section. Using only defaults.")
-             cfg_section = config.defaults()
-        else:
-             cfg_section = config['DEFAULT']
+        cfg_section = config['DEFAULT']
 
-        meshtastic_port = cfg_section.get('MESHTASTIC_SERIAL_PORT')
-        external_network_id = cfg_section.get('EXTERNAL_NETWORK_ID')
-        bridge_node_id = cfg_section.get('BRIDGE_NODE_ID')
-        log_level = cfg_section.get('LOG_LEVEL').upper()
+        meshtastic_port = cfg_section.get('MESHTASTIC_SERIAL_PORT', fallback=DEFAULT_CONFIG['MESHTASTIC_SERIAL_PORT'])
+        external_network_id = cfg_section.get('EXTERNAL_NETWORK_ID', fallback=DEFAULT_CONFIG['EXTERNAL_NETWORK_ID'])
+        bridge_node_id = cfg_section.get('BRIDGE_NODE_ID', fallback=DEFAULT_CONFIG['BRIDGE_NODE_ID'])
+        log_level = cfg_section.get('LOG_LEVEL', fallback=DEFAULT_CONFIG['LOG_LEVEL']).upper()
         
         if log_level not in VALID_LOG_LEVELS:
             logger.error(f"Invalid LOG_LEVEL '{log_level}'. Must be one of: {VALID_LOG_LEVELS}")
@@ -121,7 +119,7 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             logger.error(f"Invalid integer value for MESSAGE_QUEUE_SIZE: {e}")
             return None
 
-        external_transport = cfg_section.get('EXTERNAL_TRANSPORT').lower()
+        external_transport = cfg_section.get('EXTERNAL_TRANSPORT', fallback=DEFAULT_CONFIG['EXTERNAL_TRANSPORT']).lower()
         if external_transport not in VALID_TRANSPORTS:
             logger.error(f"Invalid EXTERNAL_TRANSPORT '{external_transport}'. Must be one of: {VALID_TRANSPORTS}")
             return None
@@ -140,8 +138,8 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         mqtt_retain_out = None
 
         if external_transport == 'serial':
-            serial_port = cfg_section.get('SERIAL_PORT')
-            serial_protocol = cfg_section.get('SERIAL_PROTOCOL').lower()
+            serial_port = cfg_section.get('SERIAL_PORT', fallback=DEFAULT_CONFIG['SERIAL_PORT'])
+            serial_protocol = cfg_section.get('SERIAL_PROTOCOL', fallback=DEFAULT_CONFIG['SERIAL_PROTOCOL']).lower()
             if not serial_port:
                  logger.error("SERIAL_PORT must be set when EXTERNAL_TRANSPORT is 'serial'.")
                  return None
