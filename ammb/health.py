@@ -6,14 +6,15 @@ Health monitoring and status checking for the bridge.
 import logging
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 
 
 class HealthStatus(Enum):
     """Health status levels."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -23,11 +24,12 @@ class HealthStatus(Enum):
 @dataclass
 class ComponentHealth:
     """Health status for a component."""
+
     name: str
     status: HealthStatus
     last_check: datetime
     message: str = ""
-    details: Dict = None
+    details: Dict = field(default_factory=dict)
 
     def __post_init__(self):
         if self.details is None:
@@ -55,7 +57,9 @@ class HealthMonitor:
         self._monitoring = False
         self._monitor_thread: Optional[threading.Thread] = None
 
-    def register_component(self, name: str, initial_status: HealthStatus = HealthStatus.UNKNOWN):
+    def register_component(
+        self, name: str, initial_status: HealthStatus = HealthStatus.UNKNOWN
+    ):
         """Register a component for health monitoring."""
         with self._lock:
             self.components[name] = ComponentHealth(
@@ -64,7 +68,13 @@ class HealthMonitor:
                 last_check=datetime.now(),
             )
 
-    def update_component(self, name: str, status: HealthStatus, message: str = "", details: Optional[Dict] = None):
+    def update_component(
+        self,
+        name: str,
+        status: HealthStatus,
+        message: str = "",
+        details: Optional[Dict] = None,
+    ):
         """Update the health status of a component."""
         with self._lock:
             if name in self.components:
@@ -72,9 +82,18 @@ class HealthMonitor:
                 self.components[name].last_check = datetime.now()
                 self.components[name].message = message
                 if details:
+                    # Ensure details is a dict.
+                    # Dataclass __post_init__ should set it.
+                    # Be defensive if None.
+                    if self.components[name].details is None:
+                        self.components[name].details = {}
                     self.components[name].details.update(details)
             else:
-                self.logger.warning(f"Component {name} not registered for health monitoring")
+                self.logger.warning(
+                    "Component %s not registered for health "
+                    "monitoring",
+                    name,
+                )
 
     def get_component_health(self, name: str) -> Optional[ComponentHealth]:
         """Get health status for a specific component."""
@@ -92,8 +111,8 @@ class HealthMonitor:
                 }
 
             statuses = [comp.status for comp in self.components.values()]
-            
-            # Determine overall status
+
+            # Determine overall status from component states
             if HealthStatus.UNHEALTHY in statuses:
                 overall = HealthStatus.UNHEALTHY
             elif HealthStatus.DEGRADED in statuses:
@@ -103,10 +122,14 @@ class HealthMonitor:
             else:
                 overall = HealthStatus.UNKNOWN
 
+            components = {
+                name: comp.to_dict()
+                for name, comp in self.components.items()
+            }
             return {
                 "status": overall.value,
                 "timestamp": datetime.now().isoformat(),
-                "components": {name: comp.to_dict() for name, comp in self.components.items()},
+                "components": components,
             }
 
     def start_monitoring(self):
@@ -115,7 +138,9 @@ class HealthMonitor:
             return
 
         self._monitoring = True
-        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True, name="HealthMonitor")
+        self._monitor_thread = threading.Thread(
+            target=self._monitor_loop, daemon=True, name="HealthMonitor"
+        )
         self._monitor_thread.start()
         self.logger.info("Health monitoring started")
 
@@ -138,13 +163,20 @@ class HealthMonitor:
                     for name, comp in list(self.components.items()):
                         if (now - comp.last_check) > stale_threshold:
                             if comp.status != HealthStatus.UNHEALTHY:
-                                self.logger.warning(f"Component {name} health check is stale")
+                                self.logger.warning(
+                                    "Component %s health check is stale",
+                                    name,
+                                )
                                 comp.status = HealthStatus.DEGRADED
-                                comp.message = "Health check stale - no recent updates"
+                                comp.message = (
+                                    "Health check stale; no recent updates"
+                                )
 
                 time.sleep(self.check_interval)
             except Exception as e:
-                self.logger.error(f"Error in health monitor loop: {e}", exc_info=True)
+                self.logger.error(
+                    "Error in health monitor loop: %s", e, exc_info=True
+                )
                 time.sleep(self.check_interval)
 
 
@@ -160,4 +192,3 @@ def get_health_monitor() -> HealthMonitor:
         if _health_monitor is None:
             _health_monitor = HealthMonitor()
         return _health_monitor
-

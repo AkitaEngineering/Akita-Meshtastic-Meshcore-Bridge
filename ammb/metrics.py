@@ -5,16 +5,16 @@ Metrics and statistics collection for the bridge.
 
 import logging
 import threading
-import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Dict, Optional
-from datetime import datetime, timedelta
 
 
 @dataclass
 class MessageStats:
     """Statistics for message processing."""
+
     total_received: int = 0
     total_sent: int = 0
     total_dropped: int = 0
@@ -57,8 +57,14 @@ class MessageStats:
                 "total_sent": self.total_sent,
                 "total_dropped": self.total_dropped,
                 "total_errors": self.total_errors,
-                "last_received": self.last_received.isoformat() if self.last_received else None,
-                "last_sent": self.last_sent.isoformat() if self.last_sent else None,
+                "last_received": (
+                    self.last_received.isoformat()
+                    if self.last_received
+                    else None
+                ),
+                "last_sent": (
+                    self.last_sent.isoformat() if self.last_sent else None
+                ),
                 "bytes_received": self.bytes_received,
                 "bytes_sent": self.bytes_sent,
             }
@@ -67,6 +73,7 @@ class MessageStats:
 @dataclass
 class ConnectionStats:
     """Statistics for connection health."""
+
     connection_count: int = 0
     disconnection_count: int = 0
     last_connected: Optional[datetime] = None
@@ -89,7 +96,9 @@ class ConnectionStats:
             self.disconnection_count += 1
             self.last_disconnected = datetime.now()
             if self.current_uptime_start:
-                uptime = (datetime.now() - self.current_uptime_start).total_seconds()
+                uptime = (
+                    datetime.now() - self.current_uptime_start
+                ).total_seconds()
                 self.total_uptime_seconds += uptime
                 self.current_uptime_start = None
 
@@ -97,7 +106,9 @@ class ConnectionStats:
         """Get current uptime in seconds."""
         with self._lock:
             if self.current_uptime_start:
-                return (datetime.now() - self.current_uptime_start).total_seconds()
+                return (
+                    datetime.now() - self.current_uptime_start
+                ).total_seconds()
             return 0.0
 
     def to_dict(self) -> Dict:
@@ -106,9 +117,18 @@ class ConnectionStats:
             return {
                 "connection_count": self.connection_count,
                 "disconnection_count": self.disconnection_count,
-                "last_connected": self.last_connected.isoformat() if self.last_connected else None,
-                "last_disconnected": self.last_disconnected.isoformat() if self.last_disconnected else None,
-                "total_uptime_seconds": self.total_uptime_seconds + self.get_current_uptime(),
+                "last_connected": (
+                    self.last_connected.isoformat()
+                    if self.last_connected
+                    else None
+                ),
+                "last_disconnected": (
+                    self.last_disconnected.isoformat()
+                    if self.last_disconnected
+                    else None
+                ),
+                "total_uptime_seconds": self.total_uptime_seconds
+                + self.get_current_uptime(),
                 "current_uptime_seconds": self.get_current_uptime(),
             }
 
@@ -224,4 +244,3 @@ def get_metrics() -> MetricsCollector:
         if _metrics is None:
             _metrics = MetricsCollector()
         return _metrics
-

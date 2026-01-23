@@ -3,19 +3,24 @@
 Message persistence and logging for the bridge.
 """
 
-import logging
 import json
+import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
-from queue import Queue, Empty
+from queue import Empty, Queue
+from typing import Any, Dict, Optional
 
 
 class MessageLogger:
     """Logs messages to file for persistence and analysis."""
 
-    def __init__(self, log_file: Optional[str] = None, max_file_size_mb: int = 10, max_backups: int = 5):
+    def __init__(
+        self,
+        log_file: Optional[str] = None,
+        max_file_size_mb: int = 10,
+        max_backups: int = 5,
+    ):
         self.logger = logging.getLogger(__name__)
         self.log_file = log_file
         self.max_file_size = max_file_size_mb * 1024 * 1024  # Convert to bytes
@@ -27,7 +32,8 @@ class MessageLogger:
         self._shutdown_event = threading.Event()
 
         if self._enabled:
-            self._log_path = Path(log_file)
+            assert self.log_file is not None
+            self._log_path = Path(self.log_file)
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
             self._start_worker()
 
@@ -36,9 +42,13 @@ class MessageLogger:
         if self._worker_thread and self._worker_thread.is_alive():
             return
 
-        self._worker_thread = threading.Thread(target=self._worker_loop, daemon=True, name="MessageLogger")
+        self._worker_thread = threading.Thread(
+            target=self._worker_loop, daemon=True, name="MessageLogger"
+        )
         self._worker_thread.start()
-        self.logger.info(f"Message logger started, logging to: {self.log_file}")
+        self.logger.info(
+            f"Message logger started, logging to: {self.log_file}"
+        )
 
     def _worker_loop(self):
         """Background loop for writing messages."""
@@ -51,7 +61,9 @@ class MessageLogger:
             except Empty:
                 continue
             except Exception as e:
-                self.logger.error(f"Error in message logger worker: {e}", exc_info=True)
+                self.logger.error(
+                    f"Error in message logger worker: {e}", exc_info=True
+                )
 
     def _write_message(self, message: Dict[str, Any]):
         """Write a message to the log file."""
@@ -60,20 +72,22 @@ class MessageLogger:
 
         try:
             # Add timestamp if not present
-            if 'timestamp' not in message:
-                message['timestamp'] = datetime.now().isoformat()
+            if "timestamp" not in message:
+                message["timestamp"] = datetime.now().isoformat()
 
             # Rotate log file if needed
             self._rotate_if_needed()
 
             # Write message as JSON line
             with self._lock:
-                with open(self._log_path, 'a', encoding='utf-8') as f:
+                with open(self._log_path, "a", encoding="utf-8") as f:
                     json.dump(message, f, ensure_ascii=False)
-                    f.write('\n')
+                    f.write("\n")
 
         except Exception as e:
-            self.logger.error(f"Error writing message to log file: {e}", exc_info=True)
+            self.logger.error(
+                f"Error writing message to log file: {e}", exc_info=True
+            )
 
     def _rotate_if_needed(self):
         """Rotate log file if it exceeds max size."""
@@ -86,16 +100,18 @@ class MessageLogger:
         try:
             # Rotate existing backups
             for i in range(self.max_backups - 1, 0, -1):
-                old_file = self._log_path.with_suffix(f'.{i}.log')
-                new_file = self._log_path.with_suffix(f'.{i + 1}.log')
+                old_file = self._log_path.with_suffix(f".{i}.log")
+                new_file = self._log_path.with_suffix(f".{i + 1}.log")
                 if old_file.exists():
                     old_file.rename(new_file)
 
             # Move current log to .1.log
-            backup_file = self._log_path.with_suffix('.1.log')
+            backup_file = self._log_path.with_suffix(".1.log")
             self._log_path.rename(backup_file)
 
-            self.logger.info(f"Rotated log file: {self._log_path} -> {backup_file}")
+            self.logger.info(
+                f"Rotated log file: {self._log_path} -> {backup_file}"
+            )
 
         except Exception as e:
             self.logger.error(f"Error rotating log file: {e}", exc_info=True)
@@ -107,8 +123,8 @@ class MessageLogger:
 
         log_entry = {
             **message,
-            'direction': direction,
-            'logged_at': datetime.now().isoformat(),
+            "direction": direction,
+            "logged_at": datetime.now().isoformat(),
         }
 
         try:
@@ -134,4 +150,3 @@ class MessageLogger:
                 break
 
         self.logger.info("Message logger stopped")
-
