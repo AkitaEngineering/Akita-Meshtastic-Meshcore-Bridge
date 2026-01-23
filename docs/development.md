@@ -114,6 +114,15 @@ We use `flake8` for checking code style against PEP 8 guidelines and common erro
    flake8 ammb/bridge.py
    ```
 
+### Project linting policy ✅
+
+- **Max line length:** 79 characters (flake8 E501). When long lines are found, prefer **targeted wrapping or splitting** (for example: split long strings, break complex expressions, or use short helper variables) rather than increasing the line length limit.
+- **Third-party packages:** Do **not** edit files under `.venv` or other external package directories to satisfy linter rules. Instead, exclude those directories from lint runs (we include `.venv` in the project's `.flake8` file).
+- **Logging:** Prefer parameterized logging calls (e.g., `logger.info("Connected to %s", port)`) instead of long f-strings to keep messages shorter and avoid unnecessary formatting overhead.
+- **Fix process:** When addressing E501 issues in project files, make conservative, behavior-preserving edits (wrap strings, reflow docstrings, or adjust logging). Re-run tests and `mypy` after each change to ensure no regressions.
+
+Example: In this revision we fixed several E501 cases in `ammb/` and `examples/` by wrapping long strings and using parameterized logging; tests and `mypy` were re-run to confirm the project remains correct.
+
 ## Static Type Checking
 
 We use `mypy` for static type checking to catch potential type-related errors before runtime.
