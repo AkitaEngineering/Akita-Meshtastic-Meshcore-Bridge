@@ -184,7 +184,7 @@ class MeshtasticHandler:
 
         self.logger.info("Meshtastic handler stopped.")
 
-    def _on_meshtastic_receive(self, packet: Dict[str, Any], interface: Any):
+    def _on_meshtastic_receive(self, packet: Dict[str, Any], interface: Any, weak=None):
         try:
             if not packet or "from" not in packet:
                 return
