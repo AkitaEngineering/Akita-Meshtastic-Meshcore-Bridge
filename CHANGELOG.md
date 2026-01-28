@@ -1,6 +1,15 @@
 # Changelog - Major Enhancements
 
-**Last Updated: December 31, 2025**
+**Last Updated: January 22, 2026**
+
+## Unreleased
+
+### Maintenance
+- **Added** `.flake8` configuration to exclude `.venv` from linting to avoid third-party noise in CI and local runs.
+- **Documented** project linting policy (79-char E501 limit, prefer wrapping and parameterized logging, and do not edit third-party site-packages).
+- **Fixed** project E501 and other flake8 issues in `ammb/` and `examples/`; tests and `mypy` were run and verified clean.
+
+---
 
 ## Version 2.0.0 - Comprehensive Code Review and Enhancements (December 31, 2025)
 
