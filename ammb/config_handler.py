@@ -113,7 +113,7 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
                 config_path,
             )
             logger.warning("Using only defaults.")
-        cfg_section = config["DEFAULT"]
+        cfg_section = config["DEFAULT"] if "DEFAULT" in config else DEFAULT_CONFIG
 
         meshtastic_port = cfg_section.get(
             "MESHTASTIC_SERIAL_PORT",
@@ -126,9 +126,10 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         bridge_node_id = cfg_section.get(
             "BRIDGE_NODE_ID", fallback=DEFAULT_CONFIG["BRIDGE_NODE_ID"]
         )
-        log_level = cfg_section.get(
-            "LOG_LEVEL", fallback=DEFAULT_CONFIG["LOG_LEVEL"]
-        ).upper()
+        log_level_raw = cfg_section.get(
+            "LOG_LEVEL", DEFAULT_CONFIG["LOG_LEVEL"]
+        )
+        log_level = log_level_raw.upper() if isinstance(log_level_raw, str) else DEFAULT_CONFIG["LOG_LEVEL"].upper()
 
         if log_level not in VALID_LOG_LEVELS:
             logger.error(

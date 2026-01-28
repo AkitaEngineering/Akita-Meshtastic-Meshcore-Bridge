@@ -15,6 +15,8 @@ def setup_logging(log_level_str: str):
     """
     Configures application-wide logging.
     """
+    if not isinstance(log_level_str, str):
+        log_level_str = "INFO"
     numeric_level = getattr(logging, log_level_str.upper(), None)
     if not isinstance(numeric_level, int):
         logging.warning(
