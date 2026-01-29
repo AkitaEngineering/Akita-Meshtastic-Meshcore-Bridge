@@ -3,15 +3,15 @@
 REST API for monitoring and controlling the bridge.
 """
 
+import json
 import logging
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 
-from .metrics import get_metrics
 from .health import get_health_monitor
+from .metrics import get_metrics
 
 
 class BridgeAPIHandler(BaseHTTPRequestHandler):
@@ -29,16 +29,16 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests."""
         parsed_path = urlparse(self.path)
-        path = parsed_path.path.rstrip('/')
+        path = parsed_path.path.rstrip("/")
 
         try:
-            if path == '/api/health':
+            if path == "/api/health":
                 self._handle_health()
-            elif path == '/api/metrics':
+            elif path == "/api/metrics":
                 self._handle_metrics()
-            elif path == '/api/status':
+            elif path == "/api/status":
                 self._handle_status()
-            elif path == '/api/info':
+            elif path == "/api/info":
                 self._handle_info()
             else:
                 self._send_response(404, {"error": "Not found"})
@@ -50,10 +50,10 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Handle POST requests."""
         parsed_path = urlparse(self.path)
-        path = parsed_path.path.rstrip('/')
+        path = parsed_path.path.rstrip("/")
 
         try:
-            if path == '/api/control':
+            if path == "/api/control":
                 self._handle_control()
             else:
                 self._send_response(404, {"error": "Not found"})
@@ -90,45 +90,54 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
         info = {
             "name": "Akita Meshtastic Meshcore Bridge",
             "version": "1.0.0",
-            "external_transport": self.bridge.config.external_transport if self.bridge.config else "unknown",
+            "external_transport": (
+                self.bridge.config.external_transport
+                if self.bridge.config
+                else "unknown"
+            ),
             "meshtastic_connected": (
                 self.bridge.meshtastic_handler._is_connected.is_set()
-                if self.bridge.meshtastic_handler else False
+                if self.bridge.meshtastic_handler
+                else False
             ),
             "external_connected": (
                 self.bridge.external_handler._is_connected.is_set()
-                if hasattr(self.bridge.external_handler, '_is_connected') and self.bridge.external_handler else False
+                if hasattr(self.bridge.external_handler, "_is_connected")
+                and self.bridge.external_handler
+                else False
             ),
         }
         self._send_response(200, info)
 
     def _handle_control(self):
         """Handle control requests."""
-        content_length = int(self.headers.get('Content-Length', 0))
+        content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
             self._send_response(400, {"error": "No request body"})
             return
 
         body = self.rfile.read(content_length)
         try:
-            data = json.loads(body.decode('utf-8'))
-            action = data.get('action')
+            data = json.loads(body.decode("utf-8"))
+            action = data.get("action")
 
-            if action == 'reset_metrics':
+            if action == "reset_metrics":
                 metrics = get_metrics()
                 metrics.reset()
                 self._send_response(200, {"message": "Metrics reset"})
             else:
-                self._send_response(400, {"error": f"Unknown action: {action}"})
+                self._send_response(
+                    400, {"error": f"Unknown action: {action}"}
+                )
         except json.JSONDecodeError:
             self._send_response(400, {"error": "Invalid JSON"})
 
     def _send_response(self, status_code: int, data: dict):
         """Send JSON response."""
-        response = json.dumps(data, indent=2).encode('utf-8')
+        response = json.dumps(data, indent=2).encode("utf-8")
         self.send_response(status_code)
-        self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', str(len(response)))
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response)))
         self.end_headers()
         self.wfile.write(response)
 
@@ -136,7 +145,9 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
 class BridgeAPIServer:
     """REST API server for the bridge."""
 
-    def __init__(self, bridge_instance, host: str = '127.0.0.1', port: int = 8080):
+    def __init__(
+        self, bridge_instance, host: str = "127.0.0.1", port: int = 8080
+    ):
         self.logger = logging.getLogger(__name__)
         self.bridge = bridge_instance
         self.host = host
@@ -154,11 +165,17 @@ class BridgeAPIServer:
 
         try:
             self.server = HTTPServer((self.host, self.port), handler_factory)
-            self.server_thread = threading.Thread(target=self._serve, daemon=True, name="BridgeAPI")
+            self.server_thread = threading.Thread(
+                target=self._serve, daemon=True, name="BridgeAPI"
+            )
             self.server_thread.start()
-            self.logger.info(f"Bridge API server started on http://{self.host}:{self.port}")
+            self.logger.info(
+                f"Bridge API server started on http://{self.host}:{self.port}"
+            )
         except Exception as e:
-            self.logger.error(f"Failed to start API server: {e}", exc_info=True)
+            self.logger.error(
+                f"Failed to start API server: {e}", exc_info=True
+            )
 
     def stop(self):
         """Stop the API server."""
@@ -174,4 +191,3 @@ class BridgeAPIServer:
         """Run the server."""
         if self.server:
             self.server.serve_forever()
-

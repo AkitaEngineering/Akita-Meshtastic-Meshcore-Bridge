@@ -19,7 +19,8 @@ class RateLimiter:
 
         Args:
             max_messages: Maximum number of messages allowed
-            time_window: Time window in seconds (default: 60 seconds = 1 minute)
+            time_window: Time window in seconds (default: 60 seconds)
+                # (1 minute)
         """
         self.logger = logging.getLogger(__name__)
         self.max_messages = max_messages
@@ -36,18 +37,24 @@ class RateLimiter:
             True if message should be allowed, False if rate limit exceeded
         """
         now = time.time()
-        
+
         with self._lock:
             # Remove old message timestamps outside the time window
-            while self.message_times and (now - self.message_times[0]) > self.time_window:
+            while (
+                self.message_times
+                and (now - self.message_times[0]) > self.time_window
+            ):
                 self.message_times.popleft()
 
             # Check if we're at the limit
             if len(self.message_times) >= self.max_messages:
                 self.violations += 1
                 self.logger.warning(
-                    f"Rate limit exceeded for {source}: "
-                    f"{len(self.message_times)}/{self.max_messages} messages in {self.time_window}s"
+                    "Rate limit exceeded for %s: %s/%s messages in %ss",
+                    source,
+                    len(self.message_times),
+                    self.max_messages,
+                    self.time_window,
                 )
                 return False
 
@@ -60,10 +67,12 @@ class RateLimiter:
         with self._lock:
             if not self.message_times:
                 return 0.0
-            
+
             now = time.time()
             # Count messages in the last minute
-            recent_count = sum(1 for t in self.message_times if (now - t) <= 60.0)
+            recent_count = sum(
+                1 for t in self.message_times if (now - t) <= 60.0
+            )
             return recent_count
 
     def reset(self):
@@ -97,7 +106,9 @@ class MultiSourceRateLimiter:
         """Check rate limit for a specific source."""
         with self._lock:
             if source not in self.limiters:
-                self.limiters[source] = RateLimiter(self.max_messages, self.time_window)
+                self.limiters[source] = RateLimiter(
+                    self.max_messages, self.time_window
+                )
             return self.limiters[source].check_rate_limit(source)
 
     def get_stats(self) -> dict:
@@ -117,4 +128,3 @@ class MultiSourceRateLimiter:
             else:
                 for limiter in self.limiters.values():
                     limiter.reset()
-
