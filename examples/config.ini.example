@@ -40,7 +40,7 @@ SERIAL_BAUD_RATE = 9600
 #                 (Use this if your device talks Text/JSON)
 #   raw_serial:   Reads raw binary/text bytes and forwards them as Hex.
 #                 (Use this for MeshCore Companion Mode or binary protocols)
-SERIAL_PROTOCOL = raw_serial
+SERIAL_PROTOCOL = json_newline  # Use json_newline for text/JSON, raw_serial for binary/hex
 
 
 # --- MQTT Transport Settings ---

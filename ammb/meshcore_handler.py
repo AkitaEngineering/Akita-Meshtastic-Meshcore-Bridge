@@ -254,7 +254,10 @@ class MeshcoreHandler:
 
                 if raw_data:
                     self.logger.debug("Serial RAW RX: %r", raw_data)
-
+                    # Update health on every receive
+                    self.health_monitor.update_component(
+                        "external", HealthStatus.HEALTHY, "Serial RX received"
+                    )
                     # Decode using the selected protocol handler
                     decoded_msg: Optional[Dict[str, Any]] = (
                         self.protocol_handler.decode(raw_data)
@@ -433,6 +436,10 @@ class MeshcoreHandler:
                             self._is_connected.clear()
 
                     if send_success:
+                        # Update health on every successful send
+                        self.health_monitor.update_component(
+                            "external", HealthStatus.HEALTHY, "Serial TX sent"
+                        )
                         self.to_serial_queue.task_done()
                     else:
                         self.logger.error(
