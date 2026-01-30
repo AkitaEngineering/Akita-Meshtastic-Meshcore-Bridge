@@ -1,3 +1,4 @@
+from google.protobuf.json_format import MessageToJson
 # ammb/meshtastic_handler.py
 """
 Handles all interactions with the Meshtastic device and network.
@@ -186,6 +187,14 @@ class MeshtasticHandler:
 
     def _on_meshtastic_receive(self, packet: Dict[str, Any], interface: Any, weak=None):
         try:
+            # Log raw protobuf as JSON if available
+            try:
+                if hasattr(interface, 'lastPacket') and interface.lastPacket:
+                    # lastPacket is a protobuf object
+                    json_str = MessageToJson(interface.lastPacket)
+                    self.logger.debug("Raw protobuf (incoming) as JSON: %s", json_str)
+            except Exception as e:
+                self.logger.debug("Could not convert incoming protobuf to JSON: %s", e)
             if not packet or "from" not in packet:
                 return
 
@@ -343,6 +352,15 @@ class MeshtasticHandler:
                         destination,
                         log_payload,
                     )
+
+                    # Log outgoing protobuf as JSON if possible
+                    try:
+                        if self.interface and hasattr(self.interface, 'myInfo') and self.interface.myInfo:
+                            # myInfo is a protobuf object
+                            json_str = MessageToJson(self.interface.myInfo)
+                            self.logger.debug("Raw protobuf (outgoing) as JSON: %s", json_str)
+                    except Exception as e:
+                        self.logger.debug("Could not convert outgoing protobuf to JSON: %s", e)
 
                     with self._lock:
                         if self.interface and self._is_connected.is_set():
