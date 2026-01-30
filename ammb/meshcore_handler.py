@@ -20,10 +20,40 @@ from .rate_limiter import RateLimiter
 from .validator import MessageValidator
 
 
+
 class MeshcoreHandler:
     """Manages Serial connection and communication with an external device."""
 
     RECONNECT_DELAY_S = 10
+    AUTO_DETECT_FAILURE_THRESHOLD = 5
+
+    def start_threads(self):
+        """Start the receiver and sender threads for MeshcoreHandler."""
+        if self.receiver_thread and self.receiver_thread.is_alive():
+            self.logger.warning("Serial receiver thread already started.")
+        else:
+            self.logger.info("Starting Serial receiver thread...")
+            self.receiver_thread = threading.Thread(
+                target=self._serial_receiver_loop,
+                daemon=True,
+                name="SerialReceiver",
+            )
+            self.receiver_thread.start()
+
+        if self.sender_thread and self.sender_thread.is_alive():
+            self.logger.warning("Serial sender thread already started.")
+        else:
+            self.logger.info("Starting Serial sender thread...")
+            self.sender_thread = threading.Thread(
+                target=self._serial_sender_loop,
+                daemon=True,
+                name="SerialSender",
+            )
+            self.sender_thread.start()
+
+    RECONNECT_DELAY_S = 10
+
+    AUTO_DETECT_FAILURE_THRESHOLD = 5
 
     def __init__(
         self,
@@ -60,9 +90,14 @@ class MeshcoreHandler:
                 "configuration options are missing."
             )
 
+        self._protocol_name = config.serial_protocol.lower()
+        self._failure_count = 0
+        self._auto_switched = False
+        self._auto_switch_enabled = getattr(config, "serial_auto_switch", True)
+        self._protocols_tried = set([self._protocol_name])
         try:
             self.protocol_handler: MeshcoreProtocolHandler = (
-                get_serial_protocol_handler(config.serial_protocol)
+                get_serial_protocol_handler(self._protocol_name)
             )
         except ValueError as e:
             self.logger.critical(
@@ -70,20 +105,44 @@ class MeshcoreHandler:
                 config.serial_protocol,
                 e,
             )
-
             class DummyHandler(MeshcoreProtocolHandler):
                 def read(self, port):
                     return None
-
                 def encode(self, data):
                     return None
-
                 def decode(self, line):
                     return None
-
             self.protocol_handler = DummyHandler()
-
         self.logger.info("Serial Handler (MeshcoreHandler) Initialized.")
+
+    def _switch_protocol(self):
+        # Switch between json_newline and raw_serial
+        if not self._auto_switch_enabled:
+            self.logger.info("Protocol auto-switching is disabled by config.")
+            return
+        new_protocol = "raw_serial" if self._protocol_name == "json_newline" else "json_newline"
+        if new_protocol in self._protocols_tried:
+            self.logger.error(
+                f"Both serial protocols failed to decode any valid messages. "
+                f"Check your device firmware, serial settings, and protocol config. "
+                f"Auto-detection is now disabled for this session."
+            )
+            self._auto_switch_enabled = False
+            return
+        self.logger.warning(
+            f"Auto-switching serial protocol from {self._protocol_name} to {new_protocol} after repeated decode failures. "
+            f"Check your device firmware and config."
+        )
+        try:
+            self.protocol_handler = get_serial_protocol_handler(new_protocol)
+            self._protocol_name = new_protocol
+            self._failure_count = 0
+            self._auto_switched = True
+            self._protocols_tried.add(new_protocol)
+        except Exception as e:
+            self.logger.error(f"Failed to auto-switch protocol: {e}")
+            # Do not switch if handler fails
+            pass
 
     def connect(self) -> bool:
         with self._lock:
@@ -92,102 +151,7 @@ class MeshcoreHandler:
                     "Serial port %s already connected.",
                     self.config.serial_port,
                 )
-                self._is_connected.set()
-                return True
-
-            try:
-                self.logger.info(
-                    "Connecting to Serial device %s at %s baud...",
-                    self.config.serial_port,
-                    self.config.serial_baud,
-                )
-                self._is_connected.clear()
-                if self.serial_port:
-                    try:
-                        self.serial_port.close()
-                    except Exception:
-                        pass
-
-                # Ensure baud rate is available for typing and runtime
-                assert self.config.serial_baud is not None
-                self.serial_port = serial.Serial(
-                    port=self.config.serial_port,
-                    baudrate=int(self.config.serial_baud),
-                    timeout=1,
-                )
-                if self.serial_port.is_open:
-                    self.logger.info(
-                        "Connected to Serial device on %s",
-                        self.config.serial_port,
-                    )
-                    self._is_connected.set()
-                    self.metrics.record_external_connection()
-                    self.health_monitor.update_component(
-                        "external", HealthStatus.HEALTHY, "Serial connected"
-                    )
-                    return True
-                else:
-                    self.logger.error(
-                        "Failed to open serial port %s; no exception raised.",
-                        self.config.serial_port,
-                    )
-                    self.serial_port = None
-                    self._is_connected.clear()
-                    return False
-
-            except serial.SerialException as e:
-                self.logger.error(
-                    "Serial error connecting to device %s: %s",
-                    self.config.serial_port,
-                    e,
-                )
-                self.serial_port = None
-                self._is_connected.clear()
-                self.metrics.record_external_disconnection()
-                self.health_monitor.update_component(
-                    "external",
-                    HealthStatus.UNHEALTHY,
-                    f"Connection failed: {e}",
-                )
-                return False
-            except Exception as e:
-                self.logger.error(
-                    "Unexpected error connecting to serial device: %s",
-                    e,
-                    exc_info=True,
-                )
-                self.serial_port = None
-                self._is_connected.clear()
-                self.metrics.record_external_disconnection()
-                self.health_monitor.update_component(
-                    "external",
-                    HealthStatus.UNHEALTHY,
-                    f"Connection error: {e}",
-                )
-                return False
-
-    def start_threads(self):
-        if self.receiver_thread and self.receiver_thread.is_alive():
-            self.logger.warning("Serial receiver thread already started.")
-        else:
-            self.logger.info("Starting Serial receiver thread...")
-            self.receiver_thread = threading.Thread(
-                target=self._serial_receiver_loop,
-                daemon=True,
-                name="SerialReceiver",
-            )
-            self.receiver_thread.start()
-
-        if self.sender_thread and self.sender_thread.is_alive():
-            self.logger.warning("Serial sender thread already started.")
-        else:
-            self.logger.info("Starting Serial sender thread...")
-            self.sender_thread = threading.Thread(
-                target=self._serial_sender_loop,
-                daemon=True,
-                name="SerialSender",
-            )
-            self.sender_thread.start()
+            # ...existing code...
 
     def stop(self):
         self.logger.info("Stopping Serial handler...")
