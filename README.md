@@ -51,21 +51,36 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
 - **For REST API (Optional):**  
   Set `API_ENABLED = True` and configure `API_HOST` and `API_PORT` to enable the monitoring API.
 
-### Run
-    python run_bridge.py
+
+### Run (Sync or Async)
+
+- **Synchronous (legacy):**
+  python run_bridge.py
+
+- **Async (recommended, for meshcore_py and async MQTT):**
+  python run_bridge_async.py
+
+The async entry point supports:
+  - Async Meshcore integration (meshcore_py)
+  - Async MQTT (asyncio-mqtt)
+  - Async REST API (FastAPI, if enabled)
+
+#### Async API Server
+If `API_ENABLED = True` in your config, the async bridge will launch a FastAPI server for health, metrics, and control endpoints (see below).
+
 
 ### REST API Endpoints (if enabled)
-- `GET /api/health` - Get health status of all components
-- `GET /api/metrics` - Get detailed metrics and statistics
-- `GET /api/status` - Get combined health and metrics
-- `GET /api/info` - Get bridge information
-- `POST /api/control` - Control actions (e.g., reset metrics)
+Endpoints are available on the configured API host/port (default: http://127.0.0.1:8080):
+
+- `GET /api/health` — Health status of all components
+- `GET /api/metrics` — Detailed metrics and statistics
+- `GET /api/status` — Combined health and metrics
+- `GET /api/info` — Bridge information
+- `POST /api/control` — Control actions (e.g., reset metrics)
 
 Example:
-```bash
-curl http://localhost:8080/api/health
-curl http://localhost:8080/api/metrics
-```
+  curl http://localhost:8080/api/health
+  curl http://localhost:8080/api/metrics
 
 ---
 
