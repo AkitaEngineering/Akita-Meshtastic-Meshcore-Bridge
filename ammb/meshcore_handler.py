@@ -91,6 +91,7 @@ class MeshcoreHandler:
             )
 
         self._protocol_name = config.serial_protocol.lower()
+        self.logger.info(f"Selected serial protocol: {self._protocol_name}")
         self._failure_count = 0
         self._auto_switched = False
         self._auto_switch_enabled = getattr(config, "serial_auto_switch", True)
@@ -99,6 +100,7 @@ class MeshcoreHandler:
             self.protocol_handler: MeshcoreProtocolHandler = (
                 get_serial_protocol_handler(self._protocol_name)
             )
+            self.logger.info(f"Initialized protocol handler: {type(self.protocol_handler).__name__}")
         except ValueError as e:
             self.logger.critical(
                 "Failed to initialize serial protocol handler '%s': %s.",
@@ -113,6 +115,7 @@ class MeshcoreHandler:
                 def decode(self, line):
                     return None
             self.protocol_handler = DummyHandler()
+            self.logger.warning("Using DummyHandler for protocol; no serial communication will occur.")
         self.logger.info("Serial Handler (MeshcoreHandler) Initialized.")
 
     def _switch_protocol(self):
@@ -151,7 +154,47 @@ class MeshcoreHandler:
                     "Serial port %s already connected.",
                     self.config.serial_port,
                 )
-            # ...existing code...
+                self._is_connected.set()
+                return True
+            # Try to open the serial port
+            try:
+                self.serial_port = serial.Serial(
+                    port=self.config.serial_port,
+                    baudrate=self.config.serial_baud,
+                    timeout=1,
+                    write_timeout=1
+                )
+                if self.serial_port.is_open:
+                    self.logger.info(
+                        "Serial port %s opened successfully.",
+                        self.config.serial_port,
+                    )
+                    self._is_connected.set()
+                    return True
+                else:
+                    self.logger.error(
+                        "Failed to open serial port %s.",
+                        self.config.serial_port,
+                    )
+                    self._is_connected.clear()
+                    return False
+            except serial.SerialException as e:
+                self.logger.error(
+                    "SerialException opening port %s: %s",
+                    self.config.serial_port,
+                    e,
+                )
+                self._is_connected.clear()
+                return False
+            except Exception as e:
+                self.logger.error(
+                    "Unexpected error opening serial port %s: %s",
+                    self.config.serial_port,
+                    e,
+                    exc_info=True,
+                )
+                self._is_connected.clear()
+                return False
 
     def stop(self):
         self.logger.info("Stopping Serial handler...")
@@ -189,6 +232,7 @@ class MeshcoreHandler:
         and queues."""
         self.logger.info("Serial receiver loop started.")
         while not self.shutdown_event.is_set():
+            # Placeholder: ACK/event handling logic could be added here
             # --- Connection Check ---
             if not self._is_connected.is_set():
                 self.logger.warning(
@@ -217,18 +261,16 @@ class MeshcoreHandler:
                         continue
 
                 if raw_data:
-                    self.logger.debug("Serial RAW RX: %r", raw_data)
-                    # Update health on every receive
+                    self.logger.debug(f"Serial RAW RX: {raw_data!r}")
                     self.health_monitor.update_component(
                         "external", HealthStatus.HEALTHY, "Serial RX received"
                     )
-                    # Decode using the selected protocol handler
                     decoded_msg: Optional[Dict[str, Any]] = (
                         self.protocol_handler.decode(raw_data)
                     )
+                    self.logger.debug(f"Decoded serial message: {decoded_msg}")
 
                     if decoded_msg:
-                        # Validate message
                         is_valid, error_msg = (
                             self.validator.validate_external_message(
                                 decoded_msg
@@ -236,13 +278,11 @@ class MeshcoreHandler:
                         )
                         if not is_valid:
                             self.logger.warning(
-                                "Invalid external message rejected: %s",
-                                error_msg
+                                f"Invalid external message rejected: {error_msg}"
                             )
                             self.metrics.record_error("external")
                             continue
 
-                        # Check rate limit
                         if not self.rate_limiter.check_rate_limit(
                             "serial_receiver"
                         ):
@@ -254,12 +294,10 @@ class MeshcoreHandler:
                             )
                             continue
 
-                        # Sanitize message
                         decoded_msg = self.validator.sanitize_external_message(
                             decoded_msg
                         )
 
-                        # Basic Translation Logic (Serial -> Meshtastic)
                         dest_meshtastic_id = decoded_msg.get(
                             "destination_meshtastic_id"
                         )
@@ -276,11 +314,12 @@ class MeshcoreHandler:
                                 text_payload_str = json.dumps(payload_json)
                             except (TypeError, ValueError) as e:
                                 self.logger.error(
-                                    "Failed to serialize payload_json: %s",
-                                    e
+                                    f"Failed to serialize payload_json: {e}"
                                 )
                         elif payload is not None:
                             text_payload_str = str(payload)
+
+                        self.logger.debug(f"Translation: dest={dest_meshtastic_id}, text={text_payload_str}, channel={channel_index}, want_ack={want_ack}")
 
                         if dest_meshtastic_id and text_payload_str is not None:
                             meshtastic_msg = {
@@ -289,7 +328,6 @@ class MeshcoreHandler:
                                 "channel_index": channel_index,
                                 "want_ack": want_ack,
                             }
-
                             try:
                                 self.to_meshtastic_queue.put_nowait(
                                     meshtastic_msg
@@ -303,8 +341,7 @@ class MeshcoreHandler:
                                     payload_size
                                 )
                                 self.logger.info(
-                                    "Queued message for Meshtastic %s",
-                                    dest_meshtastic_id,
+                                    f"Queued message for Meshtastic {dest_meshtastic_id}"
                                 )
                             except Full:
                                 self.logger.warning(
@@ -315,7 +352,7 @@ class MeshcoreHandler:
                             self.logger.warning(
                                 "Decoded serial message missing fields."
                             )
-                            self.logger.debug("Decoded: %s", decoded_msg)
+                            self.logger.debug(f"Decoded: {decoded_msg}")
                 else:
                     # No data available - sleep briefly to avoid CPU spin
                     time.sleep(0.1)
