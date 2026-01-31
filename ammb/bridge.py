@@ -69,13 +69,18 @@ class Bridge:
         self.handlers: list[object] = []
 
         try:
-            self.meshtastic_handler = MeshtasticHandler(
-                config=config,
-                to_external_queue=self.to_external_queue,
-                from_external_queue=self.to_meshtastic_queue,
-                shutdown_event=self.shutdown_event,
-            )
-            self.handlers.append(self.meshtastic_handler)
+            # Only initialize Meshtastic handler if MESHTASTIC_SERIAL_PORT is set
+            if config.meshtastic_port and config.meshtastic_port.strip():
+                self.meshtastic_handler = MeshtasticHandler(
+                    config=config,
+                    to_external_queue=self.to_external_queue,
+                    from_external_queue=self.to_meshtastic_queue,
+                    shutdown_event=self.shutdown_event,
+                )
+                self.handlers.append(self.meshtastic_handler)
+            else:
+                self.meshtastic_handler = None
+                self.logger.info("MESHTASTIC_SERIAL_PORT not set; skipping Meshtastic handler initialization.")
 
             if config.external_transport == "serial":
                 self.logger.info("Selected external transport: Serial")
@@ -117,7 +122,7 @@ class Bridge:
     def run(self):
         self.logger.info("Starting AMMB run sequence...")
 
-        if not self.meshtastic_handler or not self.external_handler:
+        if not self.external_handler:
             self.logger.error(
                 "One or more handlers failed to initialize. Bridge cannot run."
             )
@@ -125,13 +130,14 @@ class Bridge:
             return
 
         self.logger.info("Attempting initial network connections...")
-        if not self.meshtastic_handler.connect():
-            self.logger.critical(
-                "Failed to connect to Meshtastic device on startup. "
-                "Bridge cannot start."
-            )
-            self.stop()
-            return
+        if self.meshtastic_handler:
+            if not self.meshtastic_handler.connect():
+                self.logger.critical(
+                    "Failed to connect to Meshtastic device on startup. "
+                    "Bridge cannot start."
+                )
+                self.stop()
+                return
 
         if not self.external_handler.connect():
             handler_type = type(self.external_handler).__name__
@@ -142,7 +148,8 @@ class Bridge:
             )
         self.logger.info("Starting handler background tasks/threads...")
         try:
-            self.meshtastic_handler.start_sender()
+            if self.meshtastic_handler:
+                self.meshtastic_handler.start_sender()
             if isinstance(self.external_handler, MeshcoreHandler):
                 self.external_handler.start_threads()
             elif isinstance(self.external_handler, MQTTHandler):

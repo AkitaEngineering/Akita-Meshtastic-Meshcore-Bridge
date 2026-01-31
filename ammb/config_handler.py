@@ -115,10 +115,13 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             logger.warning("Using only defaults.")
         cfg_section = config["DEFAULT"] if "DEFAULT" in config else DEFAULT_CONFIG
 
-        meshtastic_port = cfg_section.get(
-            "MESHTASTIC_SERIAL_PORT",
-            fallback=DEFAULT_CONFIG["MESHTASTIC_SERIAL_PORT"],
-        )
+        # Only set meshtastic_port if explicitly present and not commented out
+        if "MESHTASTIC_SERIAL_PORT" in cfg_section:
+            meshtastic_port = cfg_section.get("MESHTASTIC_SERIAL_PORT", "").strip()
+            if not meshtastic_port or meshtastic_port.startswith("#"):
+                meshtastic_port = None
+        else:
+            meshtastic_port = None
         external_network_id = cfg_section.get(
             "EXTERNAL_NETWORK_ID",
             fallback=DEFAULT_CONFIG["EXTERNAL_NETWORK_ID"],
