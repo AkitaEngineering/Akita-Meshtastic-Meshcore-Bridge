@@ -50,6 +50,11 @@ class BridgeConfig(NamedTuple):
     mqtt_tls_ca_certs: Optional[str] = None
     mqtt_tls_insecure: Optional[bool] = False
 
+    # Companion (Meshcore) Settings (Optional)
+    companion_handshake_enabled: Optional[bool] = True
+    companion_contacts_poll_s: Optional[int] = 0
+    companion_debug: Optional[bool] = False
+
 
 CONFIG_FILE = "config.ini"
 
@@ -78,6 +83,9 @@ DEFAULT_CONFIG = {
     "MQTT_TLS_ENABLED": "False",
     "MQTT_TLS_CA_CERTS": "",
     "MQTT_TLS_INSECURE": "False",
+    "COMPANION_HANDSHAKE_ENABLED": "True",
+    "COMPANION_CONTACTS_POLL_S": "0",
+    "COMPANION_DEBUG": "False",
 }
 
 VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
@@ -266,6 +274,22 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             "MQTT_TLS_INSECURE", fallback=False
         )
 
+        # Companion settings
+        companion_handshake_enabled = cfg_section.getboolean(
+            "COMPANION_HANDSHAKE_ENABLED", fallback=True
+        )
+        try:
+            companion_contacts_poll_s = cfg_section.getint(
+                "COMPANION_CONTACTS_POLL_S", fallback=0
+            )
+            if companion_contacts_poll_s is None or companion_contacts_poll_s < 0:
+                companion_contacts_poll_s = 0
+        except ValueError:
+            companion_contacts_poll_s = 0
+        companion_debug = cfg_section.getboolean(
+            "COMPANION_DEBUG", fallback=False
+        )
+
         bridge_config = BridgeConfig(
             meshtastic_port=meshtastic_port,
             external_transport=cast(
@@ -293,6 +317,9 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             mqtt_tls_enabled=mqtt_tls_enabled,
             mqtt_tls_ca_certs=mqtt_tls_ca_certs,
             mqtt_tls_insecure=mqtt_tls_insecure,
+            companion_handshake_enabled=companion_handshake_enabled,
+            companion_contacts_poll_s=companion_contacts_poll_s,
+            companion_debug=companion_debug,
         )
         logger.debug("Configuration loaded: %s", bridge_config)
         return bridge_config

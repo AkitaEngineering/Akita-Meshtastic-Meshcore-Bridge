@@ -51,6 +51,21 @@ class MeshcoreHandler:
             )
             self.sender_thread.start()
 
+        if (
+            self._protocol_name == "companion_radio"
+            and self._companion_contacts_poll_s > 0
+        ):
+            if self._contacts_poll_thread and self._contacts_poll_thread.is_alive():
+                self.logger.warning("Companion contacts poll thread already started.")
+            else:
+                self.logger.info("Starting Companion contacts poll thread...")
+                self._contacts_poll_thread = threading.Thread(
+                    target=self._contacts_poll_loop,
+                    daemon=True,
+                    name="CompanionContactsPoll",
+                )
+                self._contacts_poll_thread.start()
+
     RECONNECT_DELAY_S = 10
 
     AUTO_DETECT_FAILURE_THRESHOLD = 5
@@ -71,6 +86,7 @@ class MeshcoreHandler:
         self.serial_port: Optional[serial.Serial] = None
         self.receiver_thread: Optional[threading.Thread] = None
         self.sender_thread: Optional[threading.Thread] = None
+        self._contacts_poll_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._is_connected = threading.Event()
 
@@ -92,6 +108,15 @@ class MeshcoreHandler:
 
         self._protocol_name = config.serial_protocol.lower()
         self.logger.info(f"Selected serial protocol: {self._protocol_name}")
+        self._companion_handshake_enabled = getattr(
+            config, "companion_handshake_enabled", True
+        )
+        self._companion_contacts_poll_s = int(
+            getattr(config, "companion_contacts_poll_s", 0) or 0
+        )
+        self._companion_debug = bool(
+            getattr(config, "companion_debug", False)
+        )
         self._failure_count = 0
         self._auto_switched = False
         self._auto_switch_enabled = getattr(config, "serial_auto_switch", True)
@@ -101,6 +126,8 @@ class MeshcoreHandler:
                 get_serial_protocol_handler(self._protocol_name)
             )
             self.logger.info(f"Initialized protocol handler: {type(self.protocol_handler).__name__}")
+            if self._protocol_name == "companion_radio" and not self._companion_debug:
+                self.protocol_handler.logger.setLevel(logging.INFO)
         except ValueError as e:
             self.logger.critical(
                 "Failed to initialize serial protocol handler '%s': %s.",
@@ -169,6 +196,11 @@ class MeshcoreHandler:
                         "Serial port %s opened successfully.",
                         self.config.serial_port,
                     )
+                    if (
+                        self._protocol_name == "companion_radio"
+                        and self._companion_handshake_enabled
+                    ):
+                        self._send_companion_handshake()
                     self._is_connected.set()
                     return True
                 else:
@@ -196,12 +228,58 @@ class MeshcoreHandler:
                 self._is_connected.clear()
                 return False
 
+    def _send_companion_handshake(self) -> None:
+        """Send basic companion protocol handshake commands to elicit responses."""
+        try:
+            # CMD_DEVICE_QUERY (22) + app_target_ver (3)
+            self._send_companion_command(bytes([22, 3]), "CMD_DEVICE_QUERY")
+            # CMD_APP_START (1) + app_ver (3) + reserved(6) + app_name
+            app_name = b"AMMB"
+            payload = bytes([1, 3]) + (b"\x00" * 6) + app_name
+            self._send_companion_command(payload, "CMD_APP_START")
+        except Exception as e:
+            self.logger.warning("Failed to send companion handshake: %s", e)
+
+    def _send_companion_command(self, payload: bytes, label: str) -> None:
+        if not self.serial_port or not self.serial_port.is_open:
+            return
+        try:
+            encoded_message = self.protocol_handler.encode({"payload": payload})
+            if not encoded_message:
+                self.logger.warning("Failed to encode companion command: %s", label)
+                return
+            self.serial_port.write(encoded_message)
+            self.serial_port.flush()
+            self.logger.info("Sent companion command: %s", label)
+        except Exception as e:
+            self.logger.warning("Error sending companion command %s: %s", label, e)
+
+    def _contacts_poll_loop(self) -> None:
+        """Periodically request contacts from MeshCore to surface adverts."""
+        self.logger.info(
+            "Companion contacts poll loop started (interval=%ss).",
+            self._companion_contacts_poll_s,
+        )
+        while not self.shutdown_event.is_set():
+            if not self._is_connected.is_set():
+                self.shutdown_event.wait(self.RECONNECT_DELAY_S)
+                continue
+            try:
+                # CMD_GET_CONTACTS (4) with no 'since' param
+                self._send_companion_command(bytes([4]), "CMD_GET_CONTACTS")
+            except Exception as e:
+                self.logger.warning("Contacts poll failed: %s", e)
+            self.shutdown_event.wait(self._companion_contacts_poll_s)
+        self.logger.info("Companion contacts poll loop stopped.")
+
     def stop(self):
         self.logger.info("Stopping Serial handler...")
         if self.receiver_thread and self.receiver_thread.is_alive():
             self.receiver_thread.join(timeout=2)
         if self.sender_thread and self.sender_thread.is_alive():
             self.sender_thread.join(timeout=5)
+        if self._contacts_poll_thread and self._contacts_poll_thread.is_alive():
+            self._contacts_poll_thread.join(timeout=2)
         self._close_serial()
         self.logger.info("Serial handler stopped.")
 
@@ -261,7 +339,8 @@ class MeshcoreHandler:
                         continue
 
                 if raw_data:
-                    self.logger.debug(f"Serial RAW RX: {raw_data!r}")
+                    if self._protocol_name != "companion_radio" or self._companion_debug:
+                        self.logger.debug(f"Serial RAW RX: {raw_data!r}")
                     self.health_monitor.update_component(
                         "external", HealthStatus.HEALTHY, "Serial RX received"
                     )
@@ -271,6 +350,15 @@ class MeshcoreHandler:
                     self.logger.debug(f"Decoded serial message: {decoded_msg}")
 
                     if decoded_msg:
+                        if decoded_msg.get("internal_only"):
+                            self.logger.info(
+                                "Companion event: %s",
+                                decoded_msg.get("companion_kind"),
+                            )
+                            continue
+                        if self._protocol_name == "companion_radio" and "payload" not in decoded_msg:
+                            self.logger.debug("Skipping non-message companion frame.")
+                            continue
                         is_valid, error_msg = (
                             self.validator.validate_external_message(
                                 decoded_msg
@@ -392,10 +480,14 @@ class MeshcoreHandler:
                 )
                 if not item:
                     continue
-
-                encoded_message: Optional[bytes] = (
-                    self.protocol_handler.encode(item)
-                )
+                encoded_message: Optional[bytes] = None
+                if self._protocol_name == "companion_radio":
+                    encoded_message = self._encode_companion_from_meshtastic(item)
+                    if encoded_message is None:
+                        self.to_serial_queue.task_done()
+                        continue
+                else:
+                    encoded_message = self.protocol_handler.encode(item)
 
                 if encoded_message:
                     # Truncate log for binary safety
@@ -466,3 +558,33 @@ class MeshcoreHandler:
                 time.sleep(5)
 
         self.logger.info("Serial sender loop stopped.")
+
+    def _encode_companion_from_meshtastic(self, item: Dict[str, Any]) -> Optional[bytes]:
+        """Encode Meshtastic-originated messages into MeshCore companion commands."""
+        msg_type = item.get("type")
+        if msg_type != "meshtastic_message":
+            self.logger.debug(
+                "Skipping non-text Meshtastic message for companion: %s",
+                msg_type,
+            )
+            return None
+
+        payload = item.get("payload")
+        if not isinstance(payload, str):
+            self.logger.warning(
+                "Unsupported Meshtastic payload type for companion: %s",
+                type(payload),
+            )
+            return None
+
+        # CMD_SEND_CHANNEL_TXT_MSG (3)
+        txt_type = 0
+        channel_idx = int(item.get("channel_index", 0))
+        sender_ts = int(time.time())
+        text_bytes = payload.encode("utf-8")
+        cmd_payload = bytes([3, txt_type, channel_idx]) + sender_ts.to_bytes(4, "little") + text_bytes
+
+        encoded = self.protocol_handler.encode({"payload": cmd_payload})
+        if not encoded:
+            self.logger.warning("Failed to encode companion text message.")
+        return encoded

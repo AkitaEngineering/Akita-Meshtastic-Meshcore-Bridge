@@ -235,15 +235,173 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             return None
 
     def decode(self, raw_data: bytes) -> Optional[Dict[str, Any]]:
-        """Wraps received payload bytes into a dict."""
+        """Decode companion payload bytes into a dict.
+
+        Only forwards text-message frames; other frames are ignored.
+        """
         if not raw_data:
             return None
-        return {
-            "destination_meshtastic_id": "^all",
-            "payload": raw_data,
-            "raw_binary": True,
-            "protocol": "companion_radio",
-        }
+
+        code = raw_data[0]
+
+        # Text message responses
+        if code == 7:  # RESP_CODE_CONTACT_MSG_RECV
+            if len(raw_data) < 1 + 6 + 1 + 1 + 4:
+                return None
+            pubkey_prefix = raw_data[1:7]
+            path_len = raw_data[7]
+            txt_type = raw_data[8]
+            sender_ts = int.from_bytes(raw_data[9:13], "little", signed=False)
+            text_bytes = raw_data[13:]
+            text = text_bytes.decode("utf-8", errors="replace")
+            return {
+                "destination_meshtastic_id": "^all",
+                "payload": text,
+                "channel_index": 0,
+                "companion_kind": "contact_msg",
+                "sender_pubkey_prefix": pubkey_prefix.hex(),
+                "path_len": path_len,
+                "txt_type": txt_type,
+                "sender_timestamp": sender_ts,
+                "protocol": "companion_radio",
+            }
+
+        if code == 16:  # RESP_CODE_CONTACT_MSG_RECV_V3
+            if len(raw_data) < 1 + 1 + 2 + 6 + 1 + 1 + 4:
+                return None
+            snr = raw_data[1]
+            pubkey_prefix = raw_data[4:10]
+            path_len = raw_data[10]
+            txt_type = raw_data[11]
+            sender_ts = int.from_bytes(raw_data[12:16], "little", signed=False)
+            text_bytes = raw_data[16:]
+            text = text_bytes.decode("utf-8", errors="replace")
+            return {
+                "destination_meshtastic_id": "^all",
+                "payload": text,
+                "channel_index": 0,
+                "companion_kind": "contact_msg",
+                "sender_pubkey_prefix": pubkey_prefix.hex(),
+                "path_len": path_len,
+                "txt_type": txt_type,
+                "snr": snr,
+                "sender_timestamp": sender_ts,
+                "protocol": "companion_radio",
+            }
+
+        if code == 8:  # RESP_CODE_CHANNEL_MSG_RECV
+            if len(raw_data) < 1 + 1 + 1 + 1 + 4:
+                return None
+            channel_idx = raw_data[1]
+            path_len = raw_data[2]
+            txt_type = raw_data[3]
+            sender_ts = int.from_bytes(raw_data[4:8], "little", signed=False)
+            text_bytes = raw_data[8:]
+            text = text_bytes.decode("utf-8", errors="replace")
+            return {
+                "destination_meshtastic_id": "^all",
+                "payload": text,
+                "channel_index": channel_idx,
+                "companion_kind": "channel_msg",
+                "path_len": path_len,
+                "txt_type": txt_type,
+                "sender_timestamp": sender_ts,
+                "protocol": "companion_radio",
+            }
+
+        if code == 17:  # RESP_CODE_CHANNEL_MSG_RECV_V3
+            if len(raw_data) < 1 + 1 + 2 + 1 + 1 + 1 + 4:
+                return None
+            snr = raw_data[1]
+            channel_idx = raw_data[4]
+            path_len = raw_data[5]
+            txt_type = raw_data[6]
+            sender_ts = int.from_bytes(raw_data[7:11], "little", signed=False)
+            text_bytes = raw_data[11:]
+            text = text_bytes.decode("utf-8", errors="replace")
+            return {
+                "destination_meshtastic_id": "^all",
+                "payload": text,
+                "channel_index": channel_idx,
+                "companion_kind": "channel_msg",
+                "path_len": path_len,
+                "txt_type": txt_type,
+                "snr": snr,
+                "sender_timestamp": sender_ts,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0:  # RESP_CODE_OK
+            return {
+                "companion_kind": "ok",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 1:  # RESP_CODE_ERR
+            err_code = raw_data[1] if len(raw_data) > 1 else None
+            return {
+                "companion_kind": "err",
+                "error_code": err_code,
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 6:  # RESP_CODE_SENT
+            if len(raw_data) < 1 + 1 + 4 + 4:
+                return None
+            send_type = raw_data[1]
+            ack_tag = raw_data[2:6]
+            timeout_ms = int.from_bytes(raw_data[6:10], "little", signed=False)
+            return {
+                "companion_kind": "sent",
+                "send_type": send_type,
+                "ack_tag": ack_tag.hex(),
+                "timeout_ms": timeout_ms,
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x82:  # PUSH_CODE_SEND_CONFIRMED
+            if len(raw_data) < 1 + 4 + 4:
+                return None
+            ack_code = raw_data[1:5]
+            round_trip = int.from_bytes(raw_data[5:9], "little", signed=False)
+            return {
+                "companion_kind": "send_confirmed",
+                "ack_code": ack_code.hex(),
+                "round_trip_ms": round_trip,
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x80:  # PUSH_CODE_ADVERT
+            if len(raw_data) < 1 + 32:
+                return None
+            pubkey = raw_data[1:33]
+            return {
+                "destination_meshtastic_id": "^all",
+                "payload": f"MC_ADVERT:{pubkey.hex()}",
+                "channel_index": 0,
+                "companion_kind": "advert",
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x8A:  # PUSH_CODE_NEW_ADVERT
+            if len(raw_data) < 1 + 32:
+                return None
+            pubkey = raw_data[1:33]
+            return {
+                "destination_meshtastic_id": "^all",
+                "payload": f"MC_NEW_ADVERT:{pubkey.hex()}",
+                "channel_index": 0,
+                "companion_kind": "new_advert",
+                "protocol": "companion_radio",
+            }
+
+        # Ignore non-message frames (device info, acks, errors, etc.)
+        self.logger.debug("Ignoring companion frame code: %s", code)
+        return None
 
 _serial_protocol_handlers = {
     "json_newline": JsonNewlineProtocol,
