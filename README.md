@@ -42,8 +42,13 @@ This bridge enables interoperability, allowing messages, sensor data (with appro
 ### Configure
 Copy `examples/config.ini.example` to `config.ini` and edit it.
 
-- **For MeshCore (Binary):**  
-  Set `EXTERNAL_TRANSPORT = serial` and `SERIAL_PROTOCOL = raw_serial`.
+- **For MeshCore (Companion USB):**  
+  Set `EXTERNAL_TRANSPORT = serial` and `SERIAL_PROTOCOL = companion_radio`.
+
+  Optional companion settings in `config.ini`:
+  - `COMPANION_HANDSHAKE_ENABLED = True` (send initial device query/app start)
+  - `COMPANION_CONTACTS_POLL_S = 0` (poll contacts/adverts; 0 disables)
+  - `COMPANION_DEBUG = False` (enable raw byte logging)
 
 - **For MQTT:**  
   Set `EXTERNAL_TRANSPORT = mqtt` and configure broker details. Optionally enable TLS/SSL for secure connections.
