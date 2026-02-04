@@ -170,37 +170,53 @@ import struct
 
 class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
     """
-    Handles the Meshcore Companion Radio Protocol (binary, framed).
-    Frame format:
-        [0x7E][len][payload...][CRC16][0x7E]
+    Handles the Meshcore Companion Radio Protocol (USB framing).
+    Outbound (radio -> app): [0x3E][len_le][payload...]
+    Inbound  (app -> radio): [0x3C][len_le][payload...]
     """
-    FRAME_DELIM = 0x7E
-    CRC_LEN = 2
+
+    OUTBOUND_START = 0x3E  # '>'
+    INBOUND_START = 0x3C   # '<'
+
+    def __init__(self):
+        super().__init__()
+        self._rx_buffer = bytearray()
 
     def read(self, serial_port) -> Optional[bytes]:
-        """Reads a full frame delimited by 0x7E, returns the raw frame (including delimiters)."""
-        frame = bytearray()
-        in_frame = False
-        while serial_port.in_waiting > 0:
-            byte = serial_port.read(1)
-            if not byte:
-                break
-            b = byte[0]
-            if b == self.FRAME_DELIM:
-                if in_frame and len(frame) > 0:
-                    # End of frame
-                    frame.append(b)
-                    return bytes(frame)
-                else:
-                    # Start of frame
-                    frame = bytearray([b])
-                    in_frame = True
-            elif in_frame:
-                frame.append(b)
-        return None
+        """Reads and returns a single outbound payload frame (without framing)."""
+        if serial_port.in_waiting > 0:
+            chunk = serial_port.read(serial_port.in_waiting)
+            if chunk:
+                self.logger.debug("Companion RAW bytes: %s", chunk.hex())
+                self._rx_buffer.extend(chunk)
+
+        while True:
+            if len(self._rx_buffer) < 3:
+                return None
+
+            if self._rx_buffer[0] != self.OUTBOUND_START:
+                # Resync to next '>'
+                try:
+                    next_idx = self._rx_buffer.index(self.OUTBOUND_START)
+                    del self._rx_buffer[:next_idx]
+                except ValueError:
+                    self._rx_buffer.clear()
+                    return None
+
+            if len(self._rx_buffer) < 3:
+                return None
+
+            length = self._rx_buffer[1] | (self._rx_buffer[2] << 8)
+            frame_len = 3 + length
+            if len(self._rx_buffer) < frame_len:
+                return None
+
+            payload = bytes(self._rx_buffer[3:frame_len])
+            del self._rx_buffer[:frame_len]
+            return payload
 
     def encode(self, data: Dict[str, Any]) -> Optional[bytes]:
-        """Encodes a payload dict into a framed binary message."""
+        """Encodes a payload dict into an inbound frame."""
         try:
             payload = data.get("payload", b"")
             if isinstance(payload, str):
@@ -209,50 +225,25 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 return None
             length = len(payload)
             frame = bytearray()
-            frame.append(self.FRAME_DELIM)
-            frame.append(length)
+            frame.append(self.INBOUND_START)
+            frame.append(length & 0xFF)
+            frame.append((length >> 8) & 0xFF)
             frame.extend(payload)
-            crc = self._crc16_ccitt(frame[1:2+length])
-            frame.extend(struct.pack('>H', crc))
-            frame.append(self.FRAME_DELIM)
             return bytes(frame)
         except Exception as e:
             self.logger.error("Error encoding companion frame: %s", e)
             return None
 
     def decode(self, raw_data: bytes) -> Optional[Dict[str, Any]]:
-        """Decodes a framed binary message into a dict."""
-        try:
-            if not raw_data or raw_data[0] != self.FRAME_DELIM or raw_data[-1] != self.FRAME_DELIM:
-                return None
-            length = raw_data[1]
-            payload = raw_data[2:2+length]
-            crc_recv = struct.unpack('>H', raw_data[2+length:2+length+2])[0]
-            crc_calc = self._crc16_ccitt(raw_data[1:2+length])
-            if crc_recv != crc_calc:
-                self.logger.warning("CRC mismatch: recv=%04X calc=%04X", crc_recv, crc_calc)
-                return None
-            return {
-                "destination_meshtastic_id": "^all",
-                "payload": payload,
-                "raw_binary": True,
-                "protocol": "companion_radio"
-            }
-        except Exception as e:
-            self.logger.error("Error decoding companion frame: %s", e)
+        """Wraps received payload bytes into a dict."""
+        if not raw_data:
             return None
-
-    @staticmethod
-    def _crc16_ccitt(data: bytes, crc: int = 0xFFFF) -> int:
-        for b in data:
-            crc ^= b << 8
-            for _ in range(8):
-                if crc & 0x8000:
-                    crc = (crc << 1) ^ 0x1021
-                else:
-                    crc <<= 1
-                crc &= 0xFFFF
-        return crc
+        return {
+            "destination_meshtastic_id": "^all",
+            "payload": raw_data,
+            "raw_binary": True,
+            "protocol": "companion_radio",
+        }
 
 _serial_protocol_handlers = {
     "json_newline": JsonNewlineProtocol,

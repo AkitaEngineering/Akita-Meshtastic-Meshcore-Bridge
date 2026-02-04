@@ -81,7 +81,7 @@ DEFAULT_CONFIG = {
 }
 
 VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
-VALID_SERIAL_PROTOCOLS = {"json_newline", "raw_serial"}
+VALID_SERIAL_PROTOCOLS = {"json_newline", "raw_serial", "companion_radio"}
 VALID_TRANSPORTS = {"serial", "mqtt"}
 VALID_MQTT_QOS = {0, 1, 2}
 
@@ -107,12 +107,6 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         logger.info("Reading configuration from: %s", config_path)
         config.read(config_path)
 
-        if "DEFAULT" not in config.sections():
-            logger.warning(
-                "Configuration file '%s' lacks the [DEFAULT] section.",
-                config_path,
-            )
-            logger.warning("Using only defaults.")
         cfg_section = config["DEFAULT"] if "DEFAULT" in config else DEFAULT_CONFIG
 
         # Only set meshtastic_port if explicitly present and not commented out
