@@ -274,6 +274,11 @@ class MeshtasticHandler:
                         else 0
                     )
                     self.metrics.record_meshtastic_received(payload_size)
+                    self.health_monitor.update_component(
+                        "meshtastic",
+                        HealthStatus.HEALTHY,
+                        "Meshtastic RX received",
+                    )
                     self.logger.debug(
                         "Queued message from %s for external handler.",
                         sender_id_hex,
@@ -376,6 +381,11 @@ class MeshtasticHandler:
                                 )
                                 self.metrics.record_meshtastic_sent(
                                     payload_size
+                                )
+                                self.health_monitor.update_component(
+                                    "meshtastic",
+                                    HealthStatus.HEALTHY,
+                                    "Meshtastic TX sent",
                                 )
                             except Exception as e:
                                 self.logger.error(

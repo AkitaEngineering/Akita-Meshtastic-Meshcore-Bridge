@@ -243,9 +243,33 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             return None
 
         code = raw_data[0]
+        base_code = code & 0x7F if code & 0x80 else code
 
-        # Text message responses
-        if code == 7:  # RESP_CODE_CONTACT_MSG_RECV
+        # Text message responses (also handle PUSH variants with high bit set)
+        if base_code in (7, 16):  # RESP_CODE_CONTACT_MSG_RECV / *_V3
+            # Prefer V3 layout when size permits
+            if len(raw_data) >= 1 + 1 + 2 + 6 + 1 + 1 + 4:
+                snr = raw_data[1]
+                pubkey_prefix = raw_data[4:10]
+                path_len = raw_data[10]
+                txt_type = raw_data[11]
+                sender_ts = int.from_bytes(
+                    raw_data[12:16], "little", signed=False
+                )
+                text_bytes = raw_data[16:]
+                text = text_bytes.decode("utf-8", errors="replace")
+                return {
+                    "destination_meshtastic_id": "^all",
+                    "payload": text,
+                    "channel_index": 0,
+                    "companion_kind": "contact_msg",
+                    "sender_pubkey_prefix": pubkey_prefix.hex(),
+                    "path_len": path_len,
+                    "txt_type": txt_type,
+                    "snr": snr,
+                    "sender_timestamp": sender_ts,
+                    "protocol": "companion_radio",
+                }
             if len(raw_data) < 1 + 6 + 1 + 1 + 4:
                 return None
             pubkey_prefix = raw_data[1:7]
@@ -266,30 +290,30 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 "protocol": "companion_radio",
             }
 
-        if code == 16:  # RESP_CODE_CONTACT_MSG_RECV_V3
-            if len(raw_data) < 1 + 1 + 2 + 6 + 1 + 1 + 4:
-                return None
-            snr = raw_data[1]
-            pubkey_prefix = raw_data[4:10]
-            path_len = raw_data[10]
-            txt_type = raw_data[11]
-            sender_ts = int.from_bytes(raw_data[12:16], "little", signed=False)
-            text_bytes = raw_data[16:]
-            text = text_bytes.decode("utf-8", errors="replace")
-            return {
-                "destination_meshtastic_id": "^all",
-                "payload": text,
-                "channel_index": 0,
-                "companion_kind": "contact_msg",
-                "sender_pubkey_prefix": pubkey_prefix.hex(),
-                "path_len": path_len,
-                "txt_type": txt_type,
-                "snr": snr,
-                "sender_timestamp": sender_ts,
-                "protocol": "companion_radio",
-            }
-
-        if code == 8:  # RESP_CODE_CHANNEL_MSG_RECV
+        if base_code in (8, 17):  # RESP_CODE_CHANNEL_MSG_RECV / *_V3
+            # Prefer V3 layout when size permits and channel index looks valid
+            if len(raw_data) >= 1 + 1 + 2 + 1 + 1 + 1 + 4:
+                channel_idx = raw_data[4]
+                if channel_idx <= 7:
+                    snr = raw_data[1]
+                    path_len = raw_data[5]
+                    txt_type = raw_data[6]
+                    sender_ts = int.from_bytes(
+                        raw_data[7:11], "little", signed=False
+                    )
+                    text_bytes = raw_data[11:]
+                    text = text_bytes.decode("utf-8", errors="replace")
+                    return {
+                        "destination_meshtastic_id": "^all",
+                        "payload": text,
+                        "channel_index": channel_idx,
+                        "companion_kind": "channel_msg",
+                        "path_len": path_len,
+                        "txt_type": txt_type,
+                        "snr": snr,
+                        "sender_timestamp": sender_ts,
+                        "protocol": "companion_radio",
+                    }
             if len(raw_data) < 1 + 1 + 1 + 1 + 4:
                 return None
             channel_idx = raw_data[1]
@@ -305,28 +329,6 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 "companion_kind": "channel_msg",
                 "path_len": path_len,
                 "txt_type": txt_type,
-                "sender_timestamp": sender_ts,
-                "protocol": "companion_radio",
-            }
-
-        if code == 17:  # RESP_CODE_CHANNEL_MSG_RECV_V3
-            if len(raw_data) < 1 + 1 + 2 + 1 + 1 + 1 + 4:
-                return None
-            snr = raw_data[1]
-            channel_idx = raw_data[4]
-            path_len = raw_data[5]
-            txt_type = raw_data[6]
-            sender_ts = int.from_bytes(raw_data[7:11], "little", signed=False)
-            text_bytes = raw_data[11:]
-            text = text_bytes.decode("utf-8", errors="replace")
-            return {
-                "destination_meshtastic_id": "^all",
-                "payload": text,
-                "channel_index": channel_idx,
-                "companion_kind": "channel_msg",
-                "path_len": path_len,
-                "txt_type": txt_type,
-                "snr": snr,
                 "sender_timestamp": sender_ts,
                 "protocol": "companion_radio",
             }
