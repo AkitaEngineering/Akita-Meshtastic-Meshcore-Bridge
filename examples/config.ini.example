@@ -40,7 +40,12 @@ SERIAL_BAUD_RATE = 9600
 #                 (Use this if your device talks Text/JSON)
 #   raw_serial:   Reads raw binary/text bytes and forwards them as Hex.
 #                 (Use this for MeshCore Companion Mode or binary protocols)
-SERIAL_PROTOCOL = json_newline  # Use json_newline for text/JSON, raw_serial for binary/hex
+#   companion_radio: MeshCore Companion USB framing protocol (recommended for MeshCore radios)
+SERIAL_PROTOCOL = json_newline  # Use json_newline for text/JSON, raw_serial for binary/hex, companion_radio for MeshCore USB framing
+
+# Auto-switch between json_newline and raw_serial after repeated decode failures.
+# Set False to disable protocol auto-detection.
+SERIAL_AUTO_SWITCH = True
 
 
 # --- MQTT Transport Settings ---
@@ -106,6 +111,15 @@ MQTT_TLS_ENABLED = False
 MQTT_TLS_CA_CERTS = 
 # Allow insecure TLS connections (not recommended for production)
 MQTT_TLS_INSECURE = False
+
+# --- MeshCore Companion Settings ---
+# Only applies when SERIAL_PROTOCOL = companion_radio
+# Send initial device query/app start on connect
+COMPANION_HANDSHAKE_ENABLED = True
+# Poll contacts/adverts periodically (0 disables polling)
+COMPANION_CONTACTS_POLL_S = 0
+# Enable raw byte logging for companion protocol
+COMPANION_DEBUG = False
 
 # --- Logging Settings ---
 

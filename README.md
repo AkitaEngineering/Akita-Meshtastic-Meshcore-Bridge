@@ -13,7 +13,7 @@ This bridge enables interoperability, allowing messages, sensor data (with appro
 - **Multiple External Transports:** Supports connecting to the external system via:  
   - **Direct Serial:** Interfaces directly with devices (like MeshCore) via standard RS-232/USB serial ports.  
   - **MQTT:** Connects to an MQTT broker to exchange messages with IoT platforms or other MQTT clients.  
-- **Configurable Serial Protocol:** Supports different serial communication protocols via `config.ini`. Includes a `raw_serial` handler specifically for MeshCore Companion Mode (Binary).  
+- **Configurable Serial Protocol:** Supports different serial communication protocols via `config.ini`. Includes `raw_serial` and `companion_radio` handlers for MeshCore Companion Mode (Binary + framed USB protocol).  
 - **Robust Connection Management:** Automatically attempts to reconnect if connections are lost.
 
 ### Enhanced Features
@@ -49,6 +49,7 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
   - `COMPANION_HANDSHAKE_ENABLED = True` (send initial device query/app start)
   - `COMPANION_CONTACTS_POLL_S = 0` (poll contacts/adverts; 0 disables)
   - `COMPANION_DEBUG = False` (enable raw byte logging)
+  - `SERIAL_AUTO_SWITCH = True` (auto-switch between `json_newline` and `raw_serial` on repeated decode failures)
 
 - **For MQTT:**  
   Set `EXTERNAL_TRANSPORT = mqtt` and configure broker details. Optionally enable TLS/SSL for secure connections.
@@ -66,7 +67,7 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
   python run_bridge_async.py
 
 The async entry point supports:
-  - Async Meshcore integration (meshcore_py)
+  - Async Meshcore integration (meshcore_py) with `CONTACT_MSG_RECV` and `CHANNEL_MSG_RECV` subscriptions
   - Async MQTT (asyncio-mqtt)
   - Async REST API (FastAPI, if enabled)
 

@@ -1,6 +1,6 @@
 # Configuration Guide
 
-**Last Updated: December 31, 2025**
+**Last Updated: February 7, 2026**
 
 The Akita Meshtastic Meshcore Bridge (AMMB) uses a configuration file named `config.ini` located in the project's root directory. Copy `examples/config.ini.example` to `config.ini` and modify it according to your setup.
 
@@ -52,8 +52,15 @@ These settings are only used when `EXTERNAL_TRANSPORT = serial`.
     * **Supported Values:**
         * `json_newline`: Messages are newline-terminated UTF-8 JSON strings (default for structured data)
         * `raw_serial`: Raw binary/text bytes forwarded as hex (for MeshCore Companion Mode)
+        * `companion_radio`: MeshCore Companion USB framing protocol (for MeshCore radios)
     * **Required:** Yes (when using serial transport)
     * **Default:** `json_newline`
+
+* **`SERIAL_AUTO_SWITCH`**
+    * **Description:** Automatically switches between `json_newline` and `raw_serial` after repeated decode failures.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `True`
 
 ### MQTT Transport Settings
 
