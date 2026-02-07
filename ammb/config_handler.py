@@ -55,6 +55,9 @@ class BridgeConfig(NamedTuple):
     companion_contacts_poll_s: Optional[int] = 0
     companion_debug: Optional[bool] = False
 
+    # Serial Auto-Switch (Optional)
+    serial_auto_switch: Optional[bool] = True
+
 
 CONFIG_FILE = "config.ini"
 
@@ -86,6 +89,7 @@ DEFAULT_CONFIG = {
     "COMPANION_HANDSHAKE_ENABLED": "True",
     "COMPANION_CONTACTS_POLL_S": "0",
     "COMPANION_DEBUG": "False",
+    "SERIAL_AUTO_SWITCH": "True",
 }
 
 VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
@@ -289,6 +293,9 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         companion_debug = cfg_section.getboolean(
             "COMPANION_DEBUG", fallback=False
         )
+        serial_auto_switch = cfg_section.getboolean(
+            "SERIAL_AUTO_SWITCH", fallback=True
+        )
 
         bridge_config = BridgeConfig(
             meshtastic_port=meshtastic_port,
@@ -320,6 +327,7 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             companion_handshake_enabled=companion_handshake_enabled,
             companion_contacts_poll_s=companion_contacts_poll_s,
             companion_debug=companion_debug,
+            serial_auto_switch=serial_auto_switch,
         )
         logger.debug("Configuration loaded: %s", bridge_config)
         return bridge_config

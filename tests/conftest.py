@@ -15,6 +15,7 @@ def temp_config_file(tmp_path):
         "SERIAL_PROTOCOL": "json_newline",
         "MESSAGE_QUEUE_SIZE": "50",
         "LOG_LEVEL": "DEBUG",
+        "SERIAL_AUTO_SWITCH": "True",
     }
     with open(config_path, "w") as f:
         parser.write(f)

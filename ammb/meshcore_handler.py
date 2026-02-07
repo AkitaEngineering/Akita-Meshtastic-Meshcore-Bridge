@@ -66,10 +66,6 @@ class MeshcoreHandler:
                 )
                 self._contacts_poll_thread.start()
 
-    RECONNECT_DELAY_S = 10
-
-    AUTO_DETECT_FAILURE_THRESHOLD = 5
-
     def __init__(
         self,
         config: BridgeConfig,
@@ -119,7 +115,7 @@ class MeshcoreHandler:
         )
         self._failure_count = 0
         self._auto_switched = False
-        self._auto_switch_enabled = getattr(config, "serial_auto_switch", True)
+        self._auto_switch_enabled = config.serial_auto_switch if config.serial_auto_switch is not None else True
         self._protocols_tried = set([self._protocol_name])
         try:
             self.protocol_handler: MeshcoreProtocolHandler = (
@@ -330,6 +326,7 @@ class MeshcoreHandler:
             # --- Read and Process Data ---
             try:
                 raw_data: Optional[bytes] = None
+                decoded_msg: Optional[Dict[str, Any]] = None
                 with self._lock:
                     if self.serial_port and self.serial_port.is_open:
                         # Delegate reading to protocol handler
@@ -344,12 +341,14 @@ class MeshcoreHandler:
                     self.health_monitor.update_component(
                         "external", HealthStatus.HEALTHY, "Serial RX received"
                     )
-                    decoded_msg: Optional[Dict[str, Any]] = (
+                    decoded_msg = (
                         self.protocol_handler.decode(raw_data)
                     )
                     self.logger.debug(f"Decoded serial message: {decoded_msg}")
 
                     if decoded_msg:
+                        # Reset failure count on successful decode
+                        self._failure_count = 0
                         if decoded_msg.get("internal_only"):
                             self.logger.info(
                                 "Companion event: %s",
@@ -445,6 +444,13 @@ class MeshcoreHandler:
                     # No data available - sleep briefly to avoid CPU spin
                     time.sleep(0.1)
 
+                # Track decode failures for protocol auto-switching
+                if raw_data and not decoded_msg:
+                    self._failure_count += 1
+                    if self._failure_count >= self.AUTO_DETECT_FAILURE_THRESHOLD:
+                        self._switch_protocol()
+                        self._failure_count = 0
+
             except serial.SerialException as e:
                 self.logger.error(
                     "Serial error in receiver loop (%s): %s",
@@ -479,6 +485,7 @@ class MeshcoreHandler:
                     timeout=1
                 )
                 if not item:
+                    self.to_serial_queue.task_done()
                     continue
                 encoded_message: Optional[bytes] = None
                 if self._protocol_name == "companion_radio":

@@ -19,6 +19,7 @@ class MeshcoreAsyncHandler:
         self.debug = debug
         self.meshcore: Optional[MeshCore] = None
         self._event_handlers: Dict[EventType, Callable] = {}
+        self._pending_subscriptions: list = []
         self._connected = asyncio.Event()
         self._disconnect_requested = False
 
@@ -27,6 +28,10 @@ class MeshcoreAsyncHandler:
         self.meshcore = await MeshCore.create_serial(self.serial_port, self.baud, debug=self.debug)
         self.meshcore.subscribe(EventType.CONNECTED, self._on_connected)
         self.meshcore.subscribe(EventType.DISCONNECTED, self._on_disconnected)
+        # Apply any subscriptions that were registered before connect
+        for event_type, handler in self._pending_subscriptions:
+            self.subscribe(event_type, handler)
+        self._pending_subscriptions.clear()
         self._connected.set()
         self.logger.info("Meshcore device connected.")
 
@@ -52,7 +57,10 @@ class MeshcoreAsyncHandler:
 
     def subscribe(self, event_type: EventType, handler: Callable):
         if not self.meshcore:
-            raise RuntimeError("Meshcore not connected.")
+            # Queue the subscription for when connect() is called
+            self._pending_subscriptions.append((event_type, handler))
+            self.logger.info(f"Queued subscription for event: {event_type} (not yet connected)")
+            return
         # Wrap handler for centralized error logging
         def safe_handler(event):
             try:

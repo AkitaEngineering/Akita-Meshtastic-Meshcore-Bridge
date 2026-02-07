@@ -31,6 +31,14 @@ class AsyncBridge:
                     debug=self.config.log_level == "DEBUG",
                 )
                 try:
+                    # Subscribe to incoming message events before connect
+                    from meshcore import EventType
+                    self.meshcore_handler.subscribe(
+                        EventType.CONTACT_MSG_RECV, self.handle_incoming_message
+                    )
+                    self.meshcore_handler.subscribe(
+                        EventType.CHANNEL_MSG_RECV, self.handle_incoming_message
+                    )
                     await self.meshcore_handler.run()
                 except Exception as e:
                     self.logger.error(f"Unhandled exception in meshcore handler: {e}", exc_info=True)
@@ -86,6 +94,3 @@ class AsyncBridge:
             # Add additional async message processing here if needed
         except Exception as e:
             self.logger.error(f"Error in handle_mqtt_message: {e}", exc_info=True)
-
-    def handle_mqtt_message(self, data):
-        self.logger.info(f"Received MQTT message: {data}")
