@@ -113,6 +113,7 @@ class MeshcoreHandler:
         self._companion_debug = bool(
             getattr(config, "companion_debug", False)
         )
+        self._companion_msg_polling = False
         self._failure_count = 0
         self._auto_switched = False
         self._auto_switch_enabled = config.serial_auto_switch if config.serial_auto_switch is not None else True
@@ -233,6 +234,9 @@ class MeshcoreHandler:
             app_name = b"AMMB"
             payload = bytes([1, 3]) + (b"\x00" * 6) + app_name
             self._send_companion_command(payload, "CMD_APP_START")
+            # Initial poll for any pending messages
+            self._companion_msg_polling = True
+            self._send_companion_command(bytes([10]), "CMD_SYNC_NEXT_MESSAGE")
         except Exception as e:
             self.logger.warning("Failed to send companion handshake: %s", e)
 
@@ -249,6 +253,21 @@ class MeshcoreHandler:
             self.logger.info("Sent companion command: %s", label)
         except Exception as e:
             self.logger.warning("Error sending companion command %s: %s", label, e)
+
+    def _send_sync_next_message(self):
+        """Send CMD_SYNC_NEXT_MESSAGE to poll queued messages from MeshCore."""
+        try:
+            payload = bytes([10])  # CMD_SYNC_NEXT_MESSAGE
+            encoded = self.protocol_handler.encode({"payload": payload})
+            if not encoded:
+                return
+            with self._lock:
+                if self.serial_port and self.serial_port.is_open:
+                    self.serial_port.write(encoded)
+                    self.serial_port.flush()
+                    self.logger.debug("Sent CMD_SYNC_NEXT_MESSAGE")
+        except Exception as e:
+            self.logger.warning("Failed to send CMD_SYNC_NEXT_MESSAGE: %s", e)
 
     def _contacts_poll_loop(self) -> None:
         """Periodically request contacts from MeshCore to surface adverts."""
@@ -280,6 +299,7 @@ class MeshcoreHandler:
         self.logger.info("Serial handler stopped.")
 
     def _close_serial(self):
+        self._companion_msg_polling = False
         with self._lock:
             if self.serial_port and self.serial_port.is_open:
                 port_name = self.config.serial_port
@@ -350,10 +370,17 @@ class MeshcoreHandler:
                         # Reset failure count on successful decode
                         self._failure_count = 0
                         if decoded_msg.get("internal_only"):
+                            kind = decoded_msg.get("companion_kind")
                             self.logger.info(
-                                "Companion event: %s",
-                                decoded_msg.get("companion_kind"),
+                                "Companion event: %s", kind
                             )
+                            # Handle message polling
+                            if kind == "msg_waiting":
+                                if not self._companion_msg_polling:
+                                    self._companion_msg_polling = True
+                                    self._send_sync_next_message()
+                            elif kind == "no_more_messages":
+                                self._companion_msg_polling = False
                             continue
                         if self._protocol_name == "companion_radio" and "payload" not in decoded_msg:
                             self.logger.debug("Skipping non-message companion frame.")
@@ -430,6 +457,12 @@ class MeshcoreHandler:
                                 self.logger.info(
                                     f"Queued message for Meshtastic {dest_meshtastic_id}"
                                 )
+                                # Continue polling if active
+                                if (
+                                    self._protocol_name == "companion_radio"
+                                    and self._companion_msg_polling
+                                ):
+                                    self._send_sync_next_message()
                             except Full:
                                 self.logger.warning(
                                     "Meshtastic queue full; dropping message."

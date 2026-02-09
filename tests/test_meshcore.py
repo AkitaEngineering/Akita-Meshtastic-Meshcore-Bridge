@@ -261,24 +261,21 @@ class TestMeshcoreCompanionProtocol:
         assert result["snr"] == 5
 
     def test_decode_push_channel_msg(self, handler):
-        """PUSH variant (high bit set): code 0x88 = 8 | 0x80, base_code=8"""
+        """0x88 is PUSH_CODE_LOG_RX_DATA (not a channel msg) and should be ignored."""
         ts = 4000
         ts_bytes = ts.to_bytes(4, "little")
         raw = bytes([0x88, 1, 0, 0]) + ts_bytes + b"push channel"
         result = handler.decode(raw)
-        assert result is not None
-        assert result["payload"] == "push channel"
-        assert result["channel_index"] == 1
+        assert result is None  # 0x88 is not a channel message
 
     def test_decode_push_contact_msg(self, handler):
-        """PUSH variant (high bit set): code 0x87 = 7 | 0x80, base_code=7"""
+        """0x87 is PUSH_CODE_STATUS_RESPONSE (not a contact msg) and should be ignored."""
         pubkey = b"\x01\x02\x03\x04\x05\x06"
         ts = 5000
         ts_bytes = ts.to_bytes(4, "little")
         raw = bytes([0x87]) + pubkey + bytes([0, 0]) + ts_bytes + b"push contact"
         result = handler.decode(raw)
-        assert result is not None
-        assert result["payload"] == "push contact"
+        assert result is None  # 0x87 is not a contact message
 
     # --- decode: control frames ---
     def test_decode_ok_response(self, handler):
@@ -333,7 +330,9 @@ class TestMeshcoreCompanionProtocol:
         result = handler.decode(raw)
         assert result is not None
         assert result["companion_kind"] == "advert"
-        assert "MC_ADVERT:" in result["payload"]
+        assert result["internal_only"] is True
+        assert result["pubkey"] == pubkey.hex()
+        assert "payload" not in result
 
     def test_decode_advert_too_short(self, handler):
         result = handler.decode(bytes([0x80]) + b"\x00" * 10)
@@ -345,7 +344,9 @@ class TestMeshcoreCompanionProtocol:
         result = handler.decode(raw)
         assert result is not None
         assert result["companion_kind"] == "new_advert"
-        assert "MC_NEW_ADVERT:" in result["payload"]
+        assert result["internal_only"] is True
+        assert result["pubkey"] == pubkey.hex()
+        assert "payload" not in result
 
     def test_decode_unknown_frame_returns_none(self, handler):
         """Unknown/unhandled frame codes should return None."""
@@ -359,6 +360,27 @@ class TestMeshcoreCompanionProtocol:
     def test_decode_channel_msg_too_short(self, handler):
         """Channel message too short should return None."""
         result = handler.decode(bytes([8, 0, 1]))
+        assert result is None
+
+    # --- decode: new companion protocol frames ---
+    def test_decode_msg_waiting(self, handler):
+        """PUSH_CODE_MSG_WAITING (0x83) should return internal msg_waiting event."""
+        result = handler.decode(bytes([0x83]))
+        assert result is not None
+        assert result["companion_kind"] == "msg_waiting"
+        assert result["internal_only"] is True
+
+    def test_decode_no_more_messages(self, handler):
+        """RESP_CODE_NO_MORE_MESSAGES (10) should return internal no_more_messages event."""
+        result = handler.decode(bytes([10]))
+        assert result is not None
+        assert result["companion_kind"] == "no_more_messages"
+        assert result["internal_only"] is True
+
+    def test_decode_log_rx_data_ignored(self, handler):
+        """PUSH_CODE_LOG_RX_DATA (0x88) should be ignored (return None)."""
+        raw = bytes([0x88]) + b"\x00" * 50
+        result = handler.decode(raw)
         assert result is None
 
 

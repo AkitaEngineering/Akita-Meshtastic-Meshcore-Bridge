@@ -237,17 +237,19 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
     def decode(self, raw_data: bytes) -> Optional[Dict[str, Any]]:
         """Decode companion payload bytes into a dict.
 
-        Only forwards text-message frames; other frames are ignored.
+        Handles RESP codes (from CMD_SYNC_NEXT_MESSAGE) and PUSH codes
+        (unsolicited events from the radio).  PUSH codes (>=0x80) have
+        their own meanings and must NOT be mapped via base_code masking.
         """
         if not raw_data:
             return None
 
         code = raw_data[0]
-        base_code = code & 0x7F if code & 0x80 else code
 
-        # Text message responses (also handle PUSH variants with high bit set)
+        # --- RESP codes (responses to CMD_SYNC_NEXT_MESSAGE) ---
+
         # V3 contact message (code 16 / 0x10)
-        if base_code == 16:  # RESP_CODE_CONTACT_MSG_RECV_V3
+        if code == 16:  # RESP_CODE_CONTACT_MSG_RECV_V3
             if len(raw_data) < 1 + 1 + 2 + 6 + 1 + 1 + 4:
                 return None
             snr = raw_data[1]
@@ -273,7 +275,7 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             }
 
         # Legacy contact message (code 7)
-        if base_code == 7:  # RESP_CODE_CONTACT_MSG_RECV
+        if code == 7:  # RESP_CODE_CONTACT_MSG_RECV
             if len(raw_data) < 1 + 6 + 1 + 1 + 4:
                 return None
             pubkey_prefix = raw_data[1:7]
@@ -295,7 +297,7 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             }
 
         # V3 channel message (code 17 / 0x11)
-        if base_code == 17:  # RESP_CODE_CHANNEL_MSG_RECV_V3
+        if code == 17:  # RESP_CODE_CHANNEL_MSG_RECV_V3
             if len(raw_data) < 1 + 1 + 2 + 1 + 1 + 1 + 4:
                 return None
             snr = raw_data[1]
@@ -320,7 +322,7 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             }
 
         # Legacy channel message (code 8)
-        if base_code == 8:  # RESP_CODE_CHANNEL_MSG_RECV
+        if code == 8:  # RESP_CODE_CHANNEL_MSG_RECV
             if len(raw_data) < 1 + 1 + 1 + 1 + 4:
                 return None
             channel_idx = raw_data[1]
@@ -371,6 +373,15 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 "protocol": "companion_radio",
             }
 
+        if code == 10:  # RESP_CODE_NO_MORE_MESSAGES
+            return {
+                "companion_kind": "no_more_messages",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        # --- PUSH codes (unsolicited events from the radio) ---
+
         if code == 0x82:  # PUSH_CODE_SEND_CONFIRMED
             if len(raw_data) < 1 + 4 + 4:
                 return None
@@ -384,15 +395,22 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 "protocol": "companion_radio",
             }
 
+        if code == 0x83:  # PUSH_CODE_MSG_WAITING
+            return {
+                "companion_kind": "msg_waiting",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
         if code == 0x80:  # PUSH_CODE_ADVERT
             if len(raw_data) < 1 + 32:
                 return None
             pubkey = raw_data[1:33]
+            self.logger.info("MeshCore advert from: %s", pubkey[:4].hex())
             return {
-                "destination_meshtastic_id": "^all",
-                "payload": f"MC_ADVERT:{pubkey.hex()}",
-                "channel_index": 0,
                 "companion_kind": "advert",
+                "pubkey": pubkey.hex(),
+                "internal_only": True,
                 "protocol": "companion_radio",
             }
 
@@ -400,16 +418,16 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             if len(raw_data) < 1 + 32:
                 return None
             pubkey = raw_data[1:33]
+            self.logger.info("MeshCore new advert from: %s", pubkey[:4].hex())
             return {
-                "destination_meshtastic_id": "^all",
-                "payload": f"MC_NEW_ADVERT:{pubkey.hex()}",
-                "channel_index": 0,
                 "companion_kind": "new_advert",
+                "pubkey": pubkey.hex(),
+                "internal_only": True,
                 "protocol": "companion_radio",
             }
 
-        # Ignore non-message frames (device info, acks, errors, etc.)
-        self.logger.debug("Ignoring companion frame code: %s", code)
+        # Ignore non-message frames (device info, log data, etc.)
+        self.logger.debug("Ignoring companion frame code: 0x%02x", code)
         return None
 
 _serial_protocol_handlers = {
