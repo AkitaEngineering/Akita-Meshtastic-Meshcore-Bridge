@@ -23,7 +23,8 @@ jobs:
       fail-fast: false # Don't cancel all jobs if one Python version fails
       matrix:
         # Test on multiple supported Python versions
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        # pytest 9.0.3+ is required for CVE-2025-71176 and supports Python 3.10+.
+        python-version: ["3.10", "3.11"]
 
     steps:
       # 1. Check out the repository code
