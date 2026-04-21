@@ -10,7 +10,7 @@
 - **Fixed** project E501 and other flake8 issues in `ammb/` and `examples/`; tests and `mypy` were run and verified clean.
 - **Added** support for python -m build
 - **Added** configuration settings for bridging specific channels
-
+- **Fixed** companion radio decoding to be more robust
 ---
 
 ## Version 2.0.0 - Comprehensive Code Review and Enhancements (December 31, 2025)
