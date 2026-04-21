@@ -9,6 +9,7 @@
 - **Documented** project linting policy (79-char E501 limit, prefer wrapping and parameterized logging, and do not edit third-party site-packages).
 - **Fixed** project E501 and other flake8 issues in `ammb/` and `examples/`; tests and `mypy` were run and verified clean.
 - **Added** support for python -m build
+- **Added** configuration settings for bridging specific channels
 
 ---
 

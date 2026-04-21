@@ -58,6 +58,9 @@ class BridgeConfig(NamedTuple):
     # Serial Auto-Switch (Optional)
     serial_auto_switch: Optional[bool] = True
 
+    # Channel index settings (Optional)
+    meshtastic_channel_index: Optional[int] = None
+    meshcore_channel_index: Optional[int] = None
 
 CONFIG_FILE = "config.ini"
 
@@ -90,6 +93,8 @@ DEFAULT_CONFIG = {
     "COMPANION_CONTACTS_POLL_S": "0",
     "COMPANION_DEBUG": "False",
     "SERIAL_AUTO_SWITCH": "True",
+    "MESHTASTIC_CHANNEL_INDEX": "",
+    "MESHCORE_CHANNEL_INDEX": "",
 }
 
 VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
@@ -296,6 +301,25 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         serial_auto_switch = cfg_section.getboolean(
             "SERIAL_AUTO_SWITCH", fallback=True
         )
+        try:
+            meshtastic_channel_index = cfg_section.getint(
+                "MESHTASTIC_CHANNEL_INDEX", fallback=None
+            )
+            if meshtastic_channel_index is not None and not (0 <=  meshtastic_channel_index <= 7):
+                meshtastic_channel_index = None
+        except ValueError:
+            meshtastic_channel_index = None
+        try:
+            meshcore_channel_index = cfg_section.getint(
+                "MESHCORE_CHANNEL_INDEX", fallback=None
+            )
+            if meshcore_channel_index is not None and not (0 <= meshcore_channel_index <= 7):
+                meshcore_channel_index = None
+        except ValueError:
+            meshcore_channel_index = None
+
+        if (meshtastic_channel_index is None) != (meshcore_channel_index is None):
+            logger.warning("Both MESHTASTIC_CHANNEL_INDEX and MESHCORE_CHANNEL_INDEX must be set. Disabling channel filtering.")
 
         bridge_config = BridgeConfig(
             meshtastic_port=meshtastic_port,
@@ -328,6 +352,8 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             companion_contacts_poll_s=companion_contacts_poll_s,
             companion_debug=companion_debug,
             serial_auto_switch=serial_auto_switch,
+            meshtastic_channel_index=meshtastic_channel_index,
+            meshcore_channel_index=meshcore_channel_index,
         )
         logger.debug("Configuration loaded: %s", bridge_config)
         return bridge_config
