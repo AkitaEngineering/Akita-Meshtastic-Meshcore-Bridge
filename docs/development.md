@@ -6,6 +6,10 @@ This guide provides instructions for setting up a development environment, runni
 
 ## Setting Up Development Environment
 
+Use Python 3.10 or newer for development and test runs. The dev toolchain now
+requires `pytest` 9.0.3+ to address CVE-2025-71176, and upstream only ships
+that fix for Python 3.10+.
+
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/AkitaEngineering/akita-meshtastic-meshcore-bridge.git
