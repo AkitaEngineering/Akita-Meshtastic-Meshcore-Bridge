@@ -1,6 +1,6 @@
 # Configuration Guide
 
-**Last Updated: February 7, 2026**
+**Last Updated: April 21, 2026**
 
 The Akita Meshtastic Meshcore Bridge (AMMB) uses a configuration file named `config.ini` located in the project's root directory. Copy `examples/config.ini.example` to `config.ini` and modify it according to your setup.
 
@@ -179,6 +179,22 @@ These settings are only used when `EXTERNAL_TRANSPORT = mqtt`.
     * **Range:** 1 and above
     * **Required:** No
     * **Default:** `100`
+
+### Channel Settings
+* **`MESHTASTIC_CHANNEL_INDEX`**
+    * **Description:** Specify the Meshtastic channel index to bridge messages to/from.
+    * **Range:** 0 to 7
+    * **Required:** No (see note below)
+    * **Default:** `None`
+
+* **`MESHCORE_CHANNEL_INDEX`**
+    * **Description:** Specify the MeshCore channel index to bridge messages to/from.
+    * **Range:** 0 to 7
+    * **Required:** No (see note below)
+    * **Default:** `None`
+
+> [!NOTE]
+> If `MESHTASTIC_CHANNEL_INDEX` is defined in the configuration file then `MESHCORE_CHANNEL_INDEX` is also required and vice versa
 
 ### Logging Settings
 

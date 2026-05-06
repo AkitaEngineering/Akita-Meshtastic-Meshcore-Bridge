@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "akita-mesh-bridge"
+version = "2.1.0"
+description = "Bridge between Meshtastic and MeshCore networks"
+readme = "README.md"
+requires-python = ">=3.8"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools]
+packages = ["ammb"]
+py-modules = [
+    "run_bridge",
+    "run_bridge_async"
+]
+
+[project.scripts]
+run-bridge = "run_bridge:main"
+run-bridge-async = "run_bridge_async:main"

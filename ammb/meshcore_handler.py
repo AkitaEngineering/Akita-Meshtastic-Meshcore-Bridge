@@ -436,6 +436,13 @@ class MeshcoreHandler:
                         self.logger.debug(f"Translation: dest={dest_meshtastic_id}, text={text_payload_str}, channel={channel_index}, want_ack={want_ack}")
 
                         if dest_meshtastic_id and text_payload_str is not None:
+                            if self.config.meshtastic_channel_index is not None and self.config.meshcore_channel_index is not None:
+                                if channel_index == self.config.meshcore_channel_index:
+                                    channel_index = self.config.meshtastic_channel_index
+                                else:
+                                    self.logger.debug("Message from MeshCore channel %s not queued", channel_index)
+                                    continue
+
                             meshtastic_msg = {
                                 "destination": dest_meshtastic_id,
                                 "text": text_payload_str,
@@ -620,6 +627,14 @@ class MeshcoreHandler:
         # CMD_SEND_CHANNEL_TXT_MSG (3)
         txt_type = 0
         channel_idx = int(item.get("channel_index", 0))
+
+        if self.config.meshtastic_channel_index is not None and self.config.meshcore_channel_index is not None:
+            if channel_idx == self.config.meshtastic_channel_index:
+                channel_idx = self.config.meshcore_channel_index
+            else:
+                self.logger.debug("Message from Meshtastic channel %s not queued", channel_idx)
+                return None
+
         sender_ts = int(time.time())
         text_bytes = payload.encode("utf-8")
         cmd_payload = bytes([3, txt_type, channel_idx]) + sender_ts.to_bytes(4, "little") + text_bytes

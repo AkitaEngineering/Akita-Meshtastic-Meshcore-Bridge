@@ -194,19 +194,27 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             if len(self._rx_buffer) < 3:
                 return None
 
-            if self._rx_buffer[0] != self.OUTBOUND_START:
-                # Resync to next '>'
-                try:
-                    next_idx = self._rx_buffer.index(self.OUTBOUND_START)
-                    del self._rx_buffer[:next_idx]
-                except ValueError:
-                    self._rx_buffer.clear()
-                    return None
+            try:
+                start_idx = self._rx_buffer.index(self.OUTBOUND_START)
+                if start_idx > 0:
+                    self.logger.warning("Discarded %d bytes of serial noise to find sync.", start_idx)
+                    del self._rx_buffer[:start_idx]
+            except ValueError:
+                # No start byte found anywhere in the buffer, clear the junk
+                self._rx_buffer.clear()
+                return None
 
             if len(self._rx_buffer) < 3:
                 return None
 
             length = self._rx_buffer[1] | (self._rx_buffer[2] << 8)
+
+            # Sanity check. If the length is absurd, this is a false start byte.
+            if length > 1024:
+                self.logger.error("Corrupt length (%d) detected. Dropping false sync byte.", length)
+                del self._rx_buffer[0:1] # Drop just the fake '>' and loop again to find the real one
+                continue
+
             frame_len = 3 + length
             if len(self._rx_buffer) < frame_len:
                 return None
@@ -244,103 +252,112 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
         if not raw_data:
             return None
 
-        code = raw_data[0]
+        try:
+            code = raw_data[0]
 
-        # --- RESP codes (responses to CMD_SYNC_NEXT_MESSAGE) ---
+            # --- RESP codes (responses to CMD_SYNC_NEXT_MESSAGE) ---
 
-        # V3 contact message (code 16 / 0x10)
-        if code == 16:  # RESP_CODE_CONTACT_MSG_RECV_V3
-            if len(raw_data) < 1 + 1 + 2 + 6 + 1 + 1 + 4:
-                return None
-            snr = raw_data[1]
-            pubkey_prefix = raw_data[4:10]
-            path_len = raw_data[10]
-            txt_type = raw_data[11]
-            sender_ts = int.from_bytes(
-                raw_data[12:16], "little", signed=False
-            )
-            text_bytes = raw_data[16:]
-            text = text_bytes.decode("utf-8", errors="replace")
-            return {
-                "destination_meshtastic_id": "^all",
-                "payload": text,
-                "channel_index": 0,
-                "companion_kind": "contact_msg",
-                "sender_pubkey_prefix": pubkey_prefix.hex(),
-                "path_len": path_len,
-                "txt_type": txt_type,
-                "snr": snr,
-                "sender_timestamp": sender_ts,
-                "protocol": "companion_radio",
-            }
+            # V3 contact message (code 16 / 0x10)
+            if code == 16:  # RESP_CODE_CONTACT_MSG_RECV_V3
+                if len(raw_data) < 1 + 1 + 2 + 6 + 1 + 1 + 4:
+                    return None
+                snr = raw_data[1]
+                pubkey_prefix = raw_data[4:10]
+                path_len = raw_data[10]
+                txt_type = raw_data[11]
+                sender_ts = int.from_bytes(
+                    raw_data[12:16], "little", signed=False
+                )
+                text_bytes = raw_data[16:]
+                text = text_bytes.decode("utf-8", errors="replace")
+                return {
+                    "destination_meshtastic_id": "^all",
+                    "payload": text,
+                    "channel_index": 0,
+                    "companion_kind": "contact_msg",
+                    "sender_pubkey_prefix": pubkey_prefix.hex(),
+                    "path_len": path_len,
+                    "txt_type": txt_type,
+                    "snr": snr,
+                    "sender_timestamp": sender_ts,
+                    "protocol": "companion_radio",
+                }
 
-        # Legacy contact message (code 7)
-        if code == 7:  # RESP_CODE_CONTACT_MSG_RECV
-            if len(raw_data) < 1 + 6 + 1 + 1 + 4:
-                return None
-            pubkey_prefix = raw_data[1:7]
-            path_len = raw_data[7]
-            txt_type = raw_data[8]
-            sender_ts = int.from_bytes(raw_data[9:13], "little", signed=False)
-            text_bytes = raw_data[13:]
-            text = text_bytes.decode("utf-8", errors="replace")
-            return {
-                "destination_meshtastic_id": "^all",
-                "payload": text,
-                "channel_index": 0,
-                "companion_kind": "contact_msg",
-                "sender_pubkey_prefix": pubkey_prefix.hex(),
-                "path_len": path_len,
-                "txt_type": txt_type,
-                "sender_timestamp": sender_ts,
-                "protocol": "companion_radio",
-            }
+            # Legacy contact message (code 7)
+            if code == 7:  # RESP_CODE_CONTACT_MSG_RECV
+                if len(raw_data) < 1 + 6 + 1 + 1 + 4:
+                    return None
+                pubkey_prefix = raw_data[1:7]
+                path_len = raw_data[7]
+                txt_type = raw_data[8]
+                sender_ts = int.from_bytes(raw_data[9:13], "little", signed=False)
+                text_bytes = raw_data[13:]
+                text = text_bytes.decode("utf-8", errors="replace")
+                return {
+                    "destination_meshtastic_id": "^all",
+                    "payload": text,
+                    "channel_index": 0,
+                    "companion_kind": "contact_msg",
+                    "sender_pubkey_prefix": pubkey_prefix.hex(),
+                    "path_len": path_len,
+                    "txt_type": txt_type,
+                    "sender_timestamp": sender_ts,
+                    "protocol": "companion_radio",
+                }
 
-        # V3 channel message (code 17 / 0x11)
-        if code == 17:  # RESP_CODE_CHANNEL_MSG_RECV_V3
-            if len(raw_data) < 1 + 1 + 2 + 1 + 1 + 1 + 4:
-                return None
-            snr = raw_data[1]
-            channel_idx = raw_data[4]
-            path_len = raw_data[5]
-            txt_type = raw_data[6]
-            sender_ts = int.from_bytes(
-                raw_data[7:11], "little", signed=False
-            )
-            text_bytes = raw_data[11:]
-            text = text_bytes.decode("utf-8", errors="replace")
-            return {
-                "destination_meshtastic_id": "^all",
-                "payload": text,
-                "channel_index": channel_idx,
-                "companion_kind": "channel_msg",
-                "path_len": path_len,
-                "txt_type": txt_type,
-                "snr": snr,
-                "sender_timestamp": sender_ts,
-                "protocol": "companion_radio",
-            }
+            # V3 channel message (code 17 / 0x11)
+            if code == 17:  # RESP_CODE_CHANNEL_MSG_RECV_V3
+                if len(raw_data) < 1 + 1 + 2 + 1 + 1 + 1 + 4:
+                    self.logger.warning("V3 Channel Message too short to decode: %s", raw_data.hex())
+                    return None
 
-        # Legacy channel message (code 8)
-        if code == 8:  # RESP_CODE_CHANNEL_MSG_RECV
-            if len(raw_data) < 1 + 1 + 1 + 1 + 4:
-                return None
-            channel_idx = raw_data[1]
-            path_len = raw_data[2]
-            txt_type = raw_data[3]
-            sender_ts = int.from_bytes(raw_data[4:8], "little", signed=False)
-            text_bytes = raw_data[8:]
-            text = text_bytes.decode("utf-8", errors="replace")
-            return {
-                "destination_meshtastic_id": "^all",
-                "payload": text,
-                "channel_index": channel_idx,
-                "companion_kind": "channel_msg",
-                "path_len": path_len,
-                "txt_type": txt_type,
-                "sender_timestamp": sender_ts,
-                "protocol": "companion_radio",
-            }
+                snr = raw_data[1]
+                channel_idx = raw_data[4]
+                path_len = raw_data[5]
+                txt_type = raw_data[6]
+                sender_ts = int.from_bytes(
+                    raw_data[7:11], "little", signed=False
+                )
+                text_bytes = raw_data[11:]
+                text = text_bytes.decode("utf-8", errors="replace")
+                return {
+                    "destination_meshtastic_id": "^all",
+                    "payload": text,
+                    "channel_index": channel_idx,
+                    "companion_kind": "channel_msg",
+                    "path_len": path_len,
+                    "txt_type": txt_type,
+                    "snr": snr,
+                    "sender_timestamp": sender_ts,
+                    "protocol": "companion_radio",
+                }
+
+            # Legacy channel message (code 8)
+            if code == 8:  # RESP_CODE_CHANNEL_MSG_RECV
+                if len(raw_data) < 1 + 1 + 1 + 1 + 4:
+                    return None
+                channel_idx = raw_data[1]
+                path_len = raw_data[2]
+                txt_type = raw_data[3]
+                sender_ts = int.from_bytes(raw_data[4:8], "little", signed=False)
+                text_bytes = raw_data[8:]
+                text = text_bytes.decode("utf-8", errors="replace")
+                return {
+                    "destination_meshtastic_id": "^all",
+                    "payload": text,
+                    "channel_index": channel_idx,
+                    "companion_kind": "channel_msg",
+                    "path_len": path_len,
+                    "txt_type": txt_type,
+                    "sender_timestamp": sender_ts,
+                    "protocol": "companion_radio",
+                }
+        except IndexError as e:
+            self.logger.error("Index error while decoding payload (Length %d): %s", len(raw_data), e)
+            return None
+        except Exception as e:
+            self.logger.error("Unexpected decode failure: %s", e, exc_info=True)
+            return None
 
         if code == 0:  # RESP_CODE_OK
             return {
@@ -426,7 +443,21 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 "protocol": "companion_radio",
             }
 
-        # Ignore non-message frames (device info, log data, etc.)
+        if code == 0x0D:  # PUSH_CODE_DEVICE_INFO
+            return {
+                "companion_kind": "device_info",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x88:  # PUSH_CODE_LOG_DATA
+            return {
+                "companion_kind": "log_data",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        # Ignore non-message frames
         self.logger.debug("Ignoring companion frame code: 0x%02x", code)
         return None
 

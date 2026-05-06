@@ -57,7 +57,7 @@ except ImportError as e:
 
 
 # --- Main Execution ---
-if __name__ == "__main__":
+def main():
     # Basic logging setup until config is loaded
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -107,3 +107,6 @@ if __name__ == "__main__":
 
     logging.info("--- Akita Meshtastic Meshcore Bridge Stopped ---")
     sys.exit(0)
+
+if __name__ == "__main__":
+    main()

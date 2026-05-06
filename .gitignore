@@ -10,3 +10,5 @@ config.ini
 .coverage
 htmlcov/
 *.log
+dist/
+akita_mesh_bridge.egg-info/
