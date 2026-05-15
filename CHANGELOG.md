@@ -11,6 +11,7 @@
 - **Added** support for python -m build
 - **Added** configuration settings for bridging specific channels
 - **Fixed** companion radio decoding to be more robust
+- **Added** `channel_index` key to `external_message` dict
 ---
 
 ## Version 2.0.0 - Comprehensive Code Review and Enhancements (December 31, 2025)

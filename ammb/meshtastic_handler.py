@@ -264,6 +264,7 @@ class MeshtasticHandler:
                     "timestamp_rx": time.time(),
                     "rx_rssi": packet.get("rxRssi"),
                     "rx_snr": packet.get("rxSnr"),
+                    "channel_index": packet.get("channel"),
                 }
 
                 try:
