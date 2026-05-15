@@ -397,7 +397,54 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 "protocol": "companion_radio",
             }
 
+        if code == 0x02:  # CONTACT_START
+            return {
+                "companion_kind": "contact_start",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x03:  # CONTACT_INFO
+            return {
+                "companion_kind": "contact_info",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x04:  # CONTACT_END
+            return {
+                "companion_kind": "contact_end",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x05:  # SELF_INFO
+            return {
+                "companion_kind": "self_info",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
+        if code == 0x0D:  # DEVICE_INFO
+            return {
+                "companion_kind": "device_info",
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
+
         # --- PUSH codes (unsolicited events from the radio) ---
+
+        if code == 0x80:  # PUSH_CODE_ADVERT
+            if len(raw_data) < 1 + 32:
+                return None
+            pubkey = raw_data[1:33]
+            self.logger.info("MeshCore advert from: %s", pubkey[:4].hex())
+            return {
+                "companion_kind": "advert",
+                "pubkey": pubkey.hex(),
+                "internal_only": True,
+                "protocol": "companion_radio",
+            }
 
         if code == 0x82:  # PUSH_CODE_SEND_CONFIRMED
             if len(raw_data) < 1 + 4 + 4:
@@ -419,14 +466,9 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
                 "protocol": "companion_radio",
             }
 
-        if code == 0x80:  # PUSH_CODE_ADVERT
-            if len(raw_data) < 1 + 32:
-                return None
-            pubkey = raw_data[1:33]
-            self.logger.info("MeshCore advert from: %s", pubkey[:4].hex())
+        if code == 0x88:  # PUSH_CODE_LOG_DATA
             return {
-                "companion_kind": "advert",
-                "pubkey": pubkey.hex(),
+                "companion_kind": "log_data",
                 "internal_only": True,
                 "protocol": "companion_radio",
             }
@@ -439,20 +481,6 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             return {
                 "companion_kind": "new_advert",
                 "pubkey": pubkey.hex(),
-                "internal_only": True,
-                "protocol": "companion_radio",
-            }
-
-        if code == 0x0D:  # PUSH_CODE_DEVICE_INFO
-            return {
-                "companion_kind": "device_info",
-                "internal_only": True,
-                "protocol": "companion_radio",
-            }
-
-        if code == 0x88:  # PUSH_CODE_LOG_DATA
-            return {
-                "companion_kind": "log_data",
                 "internal_only": True,
                 "protocol": "companion_radio",
             }
