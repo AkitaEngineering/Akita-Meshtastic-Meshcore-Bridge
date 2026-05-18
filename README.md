@@ -20,6 +20,7 @@ This bridge enables interoperability, allowing messages, sensor data (with appro
 - **REST API:** Built-in HTTP API for monitoring bridge status, metrics, and health (optional, configurable)
 - **Health Monitoring:** Real-time health status tracking for all bridge components
 - **Metrics Collection:** Comprehensive statistics on messages, connections, and performance
+- **Full-Screen Command Center:** Textual-based terminal UI with live bridge state, metrics, health, queue depth, event feed, and log tail
 - **Message Validation:** Automatic validation and sanitization of all messages
 - **Rate Limiting:** Configurable rate limiting to prevent message flooding
 - **MQTT TLS/SSL Support:** Secure MQTT connections with TLS/SSL encryption
@@ -64,8 +65,18 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
 - **Synchronous (legacy):**
   python run_bridge.py
 
+- **Full-screen terminal command center:**
+  python run_bridge_tui.py
+
 - **Async (recommended, for meshcore_py and async MQTT):**
   python run_bridge_async.py
+
+The command center uses the same `config.ini` as the synchronous bridge and adds:
+  - live bridge state, queue depth, and connection visibility
+  - a full-screen health and metrics dashboard
+  - recent events and a scrolling log tail
+  - keyboard shortcuts: `S` start/stop, `R` restart, `M` reset metrics, `P` pause logs, `C` clear logs, `Q` quit
+  - crash reports written to `ammb_tui_crash.log` if the dashboard hits an unhandled startup/runtime exception
 
 The async entry point supports:
   - Async Meshcore integration (meshcore_py) with `CONTACT_MSG_RECV` and `CHANNEL_MSG_RECV` subscriptions
