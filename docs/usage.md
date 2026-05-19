@@ -1,12 +1,12 @@
 # Usage Guide
 
-**Last Updated: December 31, 2025**
+**Last Updated: May 18, 2026**
 
 This guide explains how to run and interact with the Akita Meshtastic Meshcore Bridge (AMMB).
 
 ## Prerequisites
 
-Ensure you have completed the steps in the [Installation](README.md#installation) section of the main README, including:
+Ensure you have completed the steps in the [Installation & Usage](../README.md#installation--usage) section of the main README, including:
 
 1. Cloning the repository
 2. Setting up a Python virtual environment (recommended)
@@ -15,18 +15,38 @@ Ensure you have completed the steps in the [Installation](README.md#installation
 
 ## Running the Bridge
 
-1. **Navigate to the project root directory** in your terminal or command prompt (the directory containing `run_bridge.py`).
+1. **Navigate to the project root directory** in your terminal or command prompt (the directory containing `run_bridge.py`, `run_bridge_async.py`, and `run_bridge_tui.py`).
 
 2. **Activate your virtual environment** (if you created one):
    * Linux/macOS: `source venv/bin/activate`
    * Windows: `.\venv\Scripts\activate`
 
-3. **Run the bridge script:**
-   ```bash
-   python run_bridge.py
-   ```
+3. **Choose the runtime mode that matches how you want to operate the bridge:**
 
-## Expected Output
+  **Legacy synchronous runtime:**
+  ```bash
+  python run_bridge.py
+  ```
+
+  **Full-screen terminal command center:**
+  ```bash
+  python run_bridge_tui.py
+  ```
+
+  **Async runtime:**
+  ```bash
+  python run_bridge_async.py
+  ```
+
+### Which Mode Should I Use?
+
+* Use `python run_bridge.py` when you want the original thread-based runtime with plain terminal logs.
+* Use `python run_bridge_tui.py` when you want the full-screen dashboard with live metrics, health, controls, and log tail in one terminal window.
+* Use `python run_bridge_async.py` when you want the async runtime for `meshcore_py`, async MQTT, and the async API surface.
+
+## Expected Behavior
+
+### Synchronous Runtime
 
 Upon successful startup, you should see log messages similar to this in your console:
 
@@ -48,25 +68,62 @@ Notes:
 * If a connection fails initially (e.g., device not plugged in), it will log a warning or error and periodically retry in the background
 * Once running, it will log messages received and sent on both networks (depending on your `LOG_LEVEL`)
 
+### Full-Screen Terminal Command Center
+
+When `python run_bridge_tui.py` starts successfully, the terminal is replaced with a full-screen dashboard instead of scrolling startup logs. The command center shows:
+
+* Bridge state, uptime, and queue depth
+* Component health for Meshtastic and the external transport
+* Message-flow metrics and connection counters
+* A control surface for start, stop, restart, and metric reset actions
+* A live event feed and log tail
+
+Keyboard shortcuts inside the dashboard:
+
+* `S`: Start or stop the bridge runtime
+* `R`: Restart the bridge runtime
+* `M`: Reset metrics
+* `P`: Pause or resume the log tail
+* `C`: Clear the in-app log buffer
+* `Q`: Quit the command center
+
+If the command center hits an unhandled startup or runtime exception, the launcher prints an error and writes a crash report to `ammb_tui_crash.log` in the project root.
+
+### Async Runtime
+
+When `python run_bridge_async.py` starts successfully, it initializes the async bridge runtime and logs startup activity for the selected async transport. If `API_ENABLED = True`, it also starts the async API server and logs the server URL.
+
 ## Monitoring
 
-### Console Logs
+### Console Logs (Sync and Async)
 
-Keep an eye on the terminal where you ran `python run_bridge.py`. This is the primary way to see what the bridge is doing, including:
+Keep an eye on the terminal where you ran `python run_bridge.py` or `python run_bridge_async.py`. This is the primary way to see what the bridge is doing, including:
 * Received messages
 * Sent messages
 * Connection attempts
 * Errors and warnings
 * Metrics and statistics
 
+### Full-Screen Command Center
+
+If you are running `python run_bridge_tui.py`, the command center becomes the primary monitoring surface. Use it to watch:
+
+* overall bridge status and uptime
+* health and connection state for Meshtastic and the external transport
+* queue depth and message counters
+* recent warnings and errors in the event feed
+* the live log tail without leaving the dashboard
+
 ### Log Level
 
 If you need more detailed information for troubleshooting:
-1. Stop the bridge (`Ctrl+C`)
+1. Stop the bridge (`Ctrl+C` for sync and async, or `Q` / `Ctrl+C` for the command center)
 2. Edit `config.ini`
 3. Set `LOG_LEVEL = DEBUG`
-4. Restart the bridge
+4. Restart your chosen entrypoint
 5. Remember to set it back to `INFO` or `WARNING` for normal operation to avoid excessive output
+
+When using the command center, DEBUG logs appear in the in-app log tail rather than in plain terminal output.
 
 ### REST API Monitoring
 
@@ -103,7 +160,12 @@ The API returns JSON data that can be parsed by monitoring tools, scripts, or da
 
 ## Stopping the Bridge
 
-Press `Ctrl+C` in the terminal where the bridge is running. The bridge will:
+Use the shutdown method that matches the runtime you started:
+
+* **Synchronous and async runtimes:** Press `Ctrl+C` in the terminal where the bridge is running.
+* **Command center:** Press `Q` to exit the dashboard, or press `Ctrl+C` if you need to interrupt it from the terminal.
+
+The bridge will then:
 1. Detect the shutdown signal
 2. Stop all handler threads
 3. Close all connections
@@ -269,6 +331,25 @@ Messages from external systems should be in the following format:
   * Verify host and port settings
   * Try connecting from localhost first
 
+### Terminal UI Issues
+
+**ERROR: Missing required libraries - ...**
+
+* **Cause:** The active Python environment does not contain one or more runtime dependencies required by the command center.
+* **Solution:**
+  * Activate the same virtual environment you plan to use for AMMB
+  * Run `pip install -r requirements.txt`
+  * Relaunch `python run_bridge_tui.py`
+
+**Command center exits immediately**
+
+* **Cause:** Invalid configuration, missing runtime dependencies, or an unhandled startup/runtime exception.
+* **Solution:**
+  * Review the terminal output from `python run_bridge_tui.py`
+  * Inspect `ammb_tui_crash.log` in the project root if it was created
+  * Confirm `config.ini` is valid and all required hardware or broker settings are present
+  * Re-run with `LOG_LEVEL = DEBUG` for more detailed log output in the dashboard
+
 ### MQTT Issues
 
 **MQTT connection failed**
@@ -303,6 +384,7 @@ If you encounter issues not covered in this guide:
 
 1. Check the logs with `LOG_LEVEL = DEBUG` for detailed information
 2. Review the API metrics and health status
-3. Consult the architecture documentation (`docs/architecture.md`)
-4. Check the configuration documentation (`docs/configuration.md`)
-5. Review the development guide (`docs/development.md`)
+3. Consult the architecture documentation (`architecture.md`)
+4. Check the configuration documentation (`configuration.md`)
+5. Review the development guide (`development.md`)
+6. If the command center crashed, include `ammb_tui_crash.log` when reporting the issue

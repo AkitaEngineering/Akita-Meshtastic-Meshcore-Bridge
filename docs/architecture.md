@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-**Last Updated: December 31, 2025**
+**Last Updated: May 18, 2026**
 
 This document describes the architecture and design of the Akita Meshtastic Meshcore Bridge (AMMB).
 
@@ -8,73 +8,99 @@ This document describes the architecture and design of the Akita Meshtastic Mesh
 
 AMMB is a bidirectional bridge that connects Meshtastic LoRa mesh networks with external systems via Serial or MQTT. The bridge operates as a message relay, translating and forwarding messages between the two networks while maintaining connection health and providing monitoring capabilities.
 
+The project currently exposes three operator-facing runtime modes:
+
+* `run_bridge.py`: legacy synchronous runtime with plain terminal logging
+* `run_bridge_async.py`: async runtime for `meshcore_py`, async MQTT, and the async API surface
+* `run_bridge_tui.py`: full-screen Textual command center that wraps the synchronous bridge and surfaces live status, metrics, health, and logs
+
+## Runtime Modes
+
+### Synchronous Runtime
+
+The synchronous runtime is built around `ammb/bridge.py`. It uses thread-based handlers, bounded queues, and shared singleton metrics and health collectors.
+
+### Async Runtime
+
+The async runtime is built around `ammb/bridge_async.py`. It uses async handlers for MeshCore and MQTT, runs on an asyncio event loop, and can launch the async FastAPI server when enabled.
+
+### Terminal Command Center
+
+The command center is implemented in `ammb/tui.py`. It launches the synchronous bridge in a background thread and renders live bridge state, connection health, metrics, queue depth, events, and logs inside a full-screen Textual interface.
+
 ## System Architecture
 
 ### Core Components
 
-1. **Bridge Orchestrator** (`ammb/bridge.py`)
-   - Main coordination component
-   - Manages handler lifecycle
-   - Coordinates message queues
-   - Handles graceful shutdown
-   - Integrates metrics, health monitoring, and API server
+1. **Bridge Orchestrators** (`ammb/bridge.py`, `ammb/bridge_async.py`)
+   - `Bridge` manages the synchronous thread-based runtime
+   - `AsyncBridge` manages the asyncio-based runtime
+   - Both coordinate handlers, startup, shutdown, and runtime state
 
-2. **Meshtastic Handler** (`ammb/meshtastic_handler.py`)
+2. **Terminal Command Center** (`ammb/tui.py`)
+   - Textual-based full-screen dashboard
+   - Starts and stops the synchronous bridge runtime
+   - Renders health, metrics, events, queue depth, and log tail
+   - Writes launcher crash reports through `run_bridge_tui.py` if the UI fails unexpectedly
+
+3. **Meshtastic Handler** (`ammb/meshtastic_handler.py`)
    - Manages connection to Meshtastic device
    - Receives messages from Meshtastic network
    - Sends messages to Meshtastic network
    - Implements loopback prevention
    - Integrates with metrics, health monitoring, validation, and rate limiting
 
-3. **External Handlers**
-   - **Serial Handler** (`ammb/meshcore_handler.py`): Manages serial port communication
-   - **MQTT Handler** (`ammb/mqtt_handler.py`): Manages MQTT broker communication
-   - Both handlers support bidirectional message flow
-   - Both integrate with metrics, health monitoring, validation, and rate limiting
+4. **External Handlers**
+   - **Sync Serial Handler** (`ammb/meshcore_handler.py`): Manages serial port communication
+   - **Sync MQTT Handler** (`ammb/mqtt_handler.py`): Manages MQTT broker communication
+   - **Async Serial Handler** (`ammb/meshcore_async_handler.py`): Async MeshCore integration
+   - **Async MQTT Handler** (`ammb/mqtt_async_handler.py`): Async MQTT integration
+   - All handlers support bidirectional message flow in their respective runtimes
+   - All handlers integrate with metrics, health monitoring, validation, and rate limiting where applicable
 
-4. **Protocol Handlers** (`ammb/protocol.py`)
+5. **Protocol Handlers** (`ammb/protocol.py`)
    - Abstract base class for serial protocols
    - Implementations: `JsonNewlineProtocol`, `RawSerialProtocol`
    - Extensible for custom protocols
 
-5. **Configuration Handler** (`ammb/config_handler.py`)
+6. **Configuration Handler** (`ammb/config_handler.py`)
    - Loads and validates configuration from `config.ini`
    - Provides type-safe configuration access
    - Validates all settings
 
-6. **Metrics Collector** (`ammb/metrics.py`)
+7. **Metrics Collector** (`ammb/metrics.py`)
    - Thread-safe metrics collection
    - Tracks message statistics (received, sent, dropped, errors)
    - Tracks connection statistics (uptime, connection counts)
    - Rate limit violation tracking
    - Global singleton instance
 
-7. **Health Monitor** (`ammb/health.py`)
+8. **Health Monitor** (`ammb/health.py`)
    - Real-time component health tracking
    - Health status levels: HEALTHY, DEGRADED, UNHEALTHY, UNKNOWN
    - Automatic stale component detection
    - Background monitoring thread
    - Global singleton instance
 
-8. **REST API Server** (`ammb/api.py`)
-   - HTTP server for monitoring and control
-   - Provides endpoints for health, metrics, status, and info
-   - Thread-safe implementation
-   - Optional component (enabled via configuration)
+9. **REST API Servers** (`ammb/api.py`, `ammb/api_async.py`)
+   - HTTP servers for monitoring and control
+   - Provide endpoints for health, metrics, status, and info
+   - Sync and async implementations are available
+   - Optional components (enabled via configuration)
 
-9. **Message Validator** (`ammb/validator.py`)
+10. **Message Validator** (`ammb/validator.py`)
    - Validates message format and content
    - Sanitizes input to prevent injection attacks
    - Validates Meshtastic node IDs
    - Validates message length and structure
 
-10. **Rate Limiter** (`ammb/rate_limiter.py`)
+11. **Rate Limiter** (`ammb/rate_limiter.py`)
     - Token bucket rate limiting algorithm
     - Prevents message flooding
     - Per-source rate limiting
     - Configurable limits
 
-11. **Message Logger** (`ammb/message_logger.py`)
+12. **Message Logger** (`ammb/message_logger.py`)
     - Optional message persistence to file
     - JSON line format
     - Automatic log rotation
@@ -104,9 +130,11 @@ AMMB is a bidirectional bridge that connects Meshtastic LoRa mesh networks with 
 7. Message is queued to Meshtastic handler
 8. Meshtastic Handler sends message to mesh network
 
-## Threading Model
+## Concurrency Model
 
-The bridge uses multiple threads for concurrent operation:
+### Synchronous Runtime
+
+The synchronous bridge uses multiple threads for concurrent operation:
 
 - **Main Thread**: Bridge orchestration and main loop
 - **Meshtastic Sender Thread**: Sends messages to Meshtastic network
@@ -120,6 +148,14 @@ The bridge uses multiple threads for concurrent operation:
 
 All threads are daemon threads except the main thread, ensuring clean shutdown.
 
+### Terminal Command Center
+
+The command center keeps the Textual app on the main thread and launches the synchronous bridge runtime in a background `AMMB-Bridge` thread. This preserves the same queue, metrics, and health model while adding an interactive operator surface.
+
+### Async Runtime
+
+The async runtime uses an asyncio event loop instead of the thread-based handler model. When the async API is enabled, `run_bridge_async.py` launches the FastAPI server in a separate process while the bridge runtime continues on the main event loop.
+
 ## Message Queues
 
 The bridge uses two internal queues:
@@ -128,6 +164,8 @@ The bridge uses two internal queues:
 - **to_external_queue**: Messages destined for external system
 
 Both queues are thread-safe and have configurable maximum sizes. When a queue is full, incoming messages are dropped with a warning logged.
+
+These queues are used directly by the synchronous bridge and the terminal command center. The async runtime uses async handler coordination instead of the synchronous queue pair.
 
 ## Connection Management
 
@@ -218,6 +256,7 @@ The metrics collector tracks:
 The health monitor provides:
 
 - Overall system health status
+- A shared health surface consumed by the REST API and the Textual command center
 - Per-component health status
 - Health check timestamps
 - Component-specific details
@@ -234,7 +273,7 @@ The REST API provides programmatic access to:
 
 ## Configuration
 
-All configuration is loaded from `config.ini` at startup. The configuration handler validates all settings and provides type-safe access. See `docs/configuration.md` for detailed configuration documentation.
+All configuration is loaded from `config.ini` at startup. The configuration handler validates all settings and provides type-safe access. See `configuration.md` for detailed configuration documentation.
 
 ## Logging
 

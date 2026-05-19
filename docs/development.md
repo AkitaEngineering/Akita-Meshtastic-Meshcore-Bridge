@@ -1,6 +1,6 @@
 # Development Guide
 
-**Last Updated: December 31, 2025**
+**Last Updated: May 18, 2026**
 
 This guide provides instructions for setting up a development environment, running tests, and contributing to the Akita Meshtastic Meshcore Bridge (AMMB) project.
 
@@ -29,7 +29,7 @@ that fix for Python 3.10+.
    pip install -r requirements.txt
    pip install -r requirements-dev.txt
    ```
-   This installs runtime dependencies (`meshtastic`, `pyserial`, `pypubsub`, `paho-mqtt`) and development tools (`pytest`, `pytest-cov`, `flake8`, `mypy`).
+   This installs runtime dependencies (`meshtastic`, `meshcore`, `asyncio-mqtt`, `textual`, `pyserial`, `pypubsub`, `paho-mqtt`) and development tools (`pytest`, `pytest-cov`, `flake8`, `mypy`).
 
 ## Project Structure
 
@@ -37,25 +37,33 @@ that fix for Python 3.10+.
 akita-meshtastic-meshcore-bridge/
 ├── ammb/                    # Main package
 │   ├── __init__.py
-│   ├── bridge.py           # Bridge orchestrator
-│   ├── config_handler.py   # Configuration management
-│   ├── meshtastic_handler.py # Meshtastic network handler
-│   ├── meshcore_handler.py  # Serial handler
-│   ├── mqtt_handler.py      # MQTT handler
-│   ├── protocol.py          # Serial protocol handlers
-│   ├── utils.py             # Utility functions
-│   ├── metrics.py           # Metrics collection
+│   ├── api.py               # Sync REST API server
+│   ├── api_async.py         # Async REST API server
+│   ├── bridge.py            # Sync bridge orchestrator
+│   ├── bridge_async.py      # Async bridge orchestrator
+│   ├── config_handler.py    # Configuration management
 │   ├── health.py            # Health monitoring
-│   ├── api.py               # REST API server
-│   ├── validator.py         # Message validation
+│   ├── meshcore_handler.py  # Sync serial handler
+│   ├── meshcore_async_handler.py # Async serial handler
+│   ├── meshtastic_handler.py # Meshtastic network handler
+│   ├── message_logger.py    # Message persistence
+│   ├── metrics.py           # Metrics collection
+│   ├── mqtt_handler.py      # Sync MQTT handler
+│   ├── mqtt_async_handler.py # Async MQTT handler
+│   ├── protocol.py          # Serial protocol handlers
 │   ├── rate_limiter.py      # Rate limiting
-│   └── message_logger.py    # Message persistence
+│   ├── tui.py               # Textual command center
+│   ├── utils.py             # Utility functions
+│   └── validator.py         # Message validation
 ├── tests/                   # Test suite
 │   ├── __init__.py
 │   ├── conftest.py
 │   ├── test_config_handler.py
-│   └── test_protocol.py
+│   ├── test_protocol.py
+│   ├── test_tui.py
+│   └── test_run_bridge_tui.py
 ├── docs/                    # Documentation
+│   ├── api.md
 │   ├── architecture.md
 │   ├── configuration.md
 │   ├── development.md
@@ -63,10 +71,12 @@ akita-meshtastic-meshcore-bridge/
 ├── examples/                # Example files
 │   ├── config.ini.example
 │   └── meshcore_simulator.py
-├── run_bridge.py           # Main entry point
-├── requirements.txt        # Runtime dependencies
-├── requirements-dev.txt   # Development dependencies
-└── README.md              # Project overview
+├── run_bridge.py            # Sync runtime entry point
+├── run_bridge_async.py      # Async runtime entry point
+├── run_bridge_tui.py        # Full-screen terminal command center entry point
+├── requirements.txt         # Runtime dependencies
+├── requirements-dev.txt     # Development dependencies
+└── README.md                # Project overview
 ```
 
 ## Running Tests
@@ -94,10 +104,24 @@ The project uses `pytest` for automated testing.
    pytest tests/test_protocol.py
    ```
 
-6. **Run with verbose output:**
+6. **Run focused command-center tests:**
+   ```bash
+   pytest tests/test_tui.py tests/test_run_bridge_tui.py
+   ```
+
+7. **Run with verbose output:**
    ```bash
    pytest -v
    ```
+
+8. **Smoke-test runtime entrypoints when changing startup behavior or operator UX:**
+   ```bash
+   python run_bridge.py
+   python run_bridge_tui.py
+   python run_bridge_async.py
+   ```
+
+   If the command center exits with an unhandled error, inspect `ammb_tui_crash.log` in the project root.
 
 ## Code Style and Linting
 
@@ -109,7 +133,7 @@ We use `flake8` for checking code style against PEP 8 guidelines and common erro
 
 3. **Run flake8:**
    ```bash
-   flake8 ammb/ tests/ run_bridge.py
+   flake8 ammb/ tests/ run_bridge.py run_bridge_async.py run_bridge_tui.py
    ```
    This will report any style violations or potential errors. Aim for zero reported issues.
 
@@ -137,7 +161,7 @@ We use `mypy` for static type checking to catch potential type-related errors be
 
 3. **Run mypy:**
    ```bash
-   mypy ammb/ run_bridge.py
+   mypy ammb/ run_bridge.py run_bridge_async.py run_bridge_tui.py
    ```
    This will analyze the type hints in the code and report any inconsistencies or errors. Aim for zero reported issues.
 
@@ -233,8 +257,8 @@ We welcome contributions! Please follow these steps:
    * Add tests for new features or bug fixes
    * Update documentation if necessary
    * Ensure all tests pass (`pytest`)
-   * Ensure linters pass (`flake8 ammb/ tests/ run_bridge.py`)
-   * Ensure type checks pass (`mypy ammb/ run_bridge.py`)
+   * Ensure linters pass (`flake8 ammb/ tests/ run_bridge.py run_bridge_async.py run_bridge_tui.py`)
+   * Ensure type checks pass (`mypy ammb/ run_bridge.py run_bridge_async.py run_bridge_tui.py`)
 
 6. **Commit your changes** with clear and descriptive commit messages:
    ```bash
@@ -287,7 +311,7 @@ To support a different serial protocol:
    ```
 
 4. Add the new protocol name as an option for the `SERIAL_PROTOCOL` setting in:
-   * `docs/configuration.md`
+   * `configuration.md`
    * `examples/config.ini.example`
 
 5. Add tests for your new protocol handler in `tests/test_protocol.py`.
@@ -346,7 +370,7 @@ To add new REST API endpoints:
        self._handle_your_endpoint()
    ```
 
-3. Update API documentation in `docs/usage.md`.
+3. Update API documentation in `usage.md`.
 
 ## Testing Guidelines
 
@@ -425,8 +449,9 @@ When preparing a release:
 3. Update documentation dates
 4. Run full test suite
 5. Run linters and type checkers
-6. Create git tag
-7. Push to repository
+6. Smoke-test the relevant operator entrypoints (`run_bridge.py`, `run_bridge_tui.py`, and/or `run_bridge_async.py`)
+7. Create git tag
+8. Push to repository
 
 ## Getting Help
 
