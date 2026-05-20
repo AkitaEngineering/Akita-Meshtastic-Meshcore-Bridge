@@ -444,6 +444,7 @@ def format_timestamp(value: object) -> str:
 
 def build_config_rows(config: BridgeConfig) -> list[tuple[str, str]]:
     """Build the configuration summary shown in the side panel."""
+    serial_protocol = config.serial_protocol or "not configured"
     rows = [
         ("Meshtastic Port", config.meshtastic_port or "disabled"),
         ("External Transport", config.external_transport.upper()),
@@ -461,19 +462,28 @@ def build_config_rows(config: BridgeConfig) -> list[tuple[str, str]]:
                 ("Serial Baud", str(config.serial_baud or "--")),
                 (
                     "Serial Protocol",
-                    (config.serial_protocol or "not configured").upper(),
-                ),
-                (
-                    "Companion Handshake",
-                    _bool_label(config.companion_handshake_enabled),
-                ),
-                (
-                    "Companion Poll",
-                    f"{config.companion_contacts_poll_s or 0}s",
+                    serial_protocol.upper(),
                 ),
                 ("Auto Switch", _bool_label(config.serial_auto_switch)),
             ]
         )
+        if serial_protocol.lower() == "companion_radio":
+            rows.extend(
+                [
+                    (
+                        "Companion Handshake",
+                        _bool_label(config.companion_handshake_enabled),
+                    ),
+                    (
+                        "Companion Poll",
+                        f"{config.companion_contacts_poll_s or 0}s",
+                    ),
+                    (
+                        "Companion Debug",
+                        _bool_label(config.companion_debug),
+                    ),
+                ]
+            )
     else:
         rows.extend(
             [

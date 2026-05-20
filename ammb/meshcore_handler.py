@@ -269,6 +269,152 @@ class MeshcoreHandler:
         except Exception as e:
             self.logger.warning("Failed to send CMD_SYNC_NEXT_MESSAGE: %s", e)
 
+    @staticmethod
+    def _short_companion_id(identifier: Optional[str]) -> str:
+        if not identifier:
+            return "unknown"
+        return identifier[:8]
+
+    def _format_companion_event(self, decoded_msg: Dict[str, Any]) -> str:
+        kind = decoded_msg.get("companion_kind") or "unknown"
+
+        if kind == "ok":
+            return "Companion command acknowledged."
+        if kind == "err":
+            return (
+                "Companion error response received"
+                f" (code={decoded_msg.get('error_code')})."
+            )
+        if kind == "sent":
+            return (
+                "Companion queued outbound message"
+                f" (ack={decoded_msg.get('ack_tag')}, timeout={decoded_msg.get('timeout_ms')}ms)."
+            )
+        if kind == "msg_waiting":
+            return "Companion reports queued messages waiting."
+        if kind == "no_more_messages":
+            return "Companion message queue drained."
+        if kind == "contact_start":
+            return (
+                "Companion contact sync started"
+                f" ({decoded_msg.get('contact_count', 'unknown')} contacts)."
+            )
+        if kind == "contact_info":
+            contact = decoded_msg.get("contact") or {}
+            label = contact.get("adv_name") or self._short_companion_id(
+                contact.get("public_key")
+            )
+            return (
+                "Companion contact discovered: "
+                f"{label} [{self._short_companion_id(contact.get('public_key'))}]."
+            )
+        if kind == "contact_end":
+            return (
+                "Companion contact sync finished"
+                f" (lastmod={decoded_msg.get('lastmod')})."
+            )
+        if kind == "self_info":
+            info = decoded_msg.get("self_info") or {}
+            label = info.get("name") or self._short_companion_id(
+                info.get("public_key")
+            )
+            radio_freq = info.get("radio_freq")
+            if isinstance(radio_freq, (int, float)):
+                return f"Companion self info: {label} @ {radio_freq:.3f} MHz."
+            return f"Companion self info: {label}."
+        if kind == "device_info":
+            info = decoded_msg.get("device_info") or {}
+            model = info.get("model") or "MeshCore device"
+            version = info.get("ver")
+            if version:
+                version_label = version
+            else:
+                fw_ver = info.get("fw_ver")
+                version_label = f"fw {fw_ver}" if fw_ver is not None else "firmware unknown"
+            capacity = []
+            if info.get("max_contacts") is not None:
+                capacity.append(f"{info['max_contacts']} contacts")
+            if info.get("max_channels") is not None:
+                capacity.append(f"{info['max_channels']} channels")
+            suffix = f" ({', '.join(capacity)})" if capacity else ""
+            return f"Companion device info: {model} {version_label}{suffix}."
+        if kind == "advert":
+            return (
+                "Companion advert received from "
+                f"{self._short_companion_id(decoded_msg.get('pubkey'))}."
+            )
+        if kind == "new_advert":
+            advert = decoded_msg.get("advert") or {}
+            label = advert.get("adv_name") or self._short_companion_id(
+                advert.get("public_key")
+            )
+            return (
+                "Companion advert discovered: "
+                f"{label} [{self._short_companion_id(advert.get('public_key'))}]."
+            )
+        if kind == "send_confirmed":
+            return (
+                "Companion send confirmed"
+                f" (ack={decoded_msg.get('ack_code')}, rtt={decoded_msg.get('round_trip_ms')}ms)."
+            )
+        if kind == "log_data":
+            return "Companion log data received."
+
+        return f"Companion event: {kind}."
+
+    def _update_companion_health(self, decoded_msg: Dict[str, Any]) -> None:
+        if self.health_monitor.get_component_health("external") is None:
+            return
+
+        kind = decoded_msg.get("companion_kind")
+        if kind == "self_info":
+            info = decoded_msg.get("self_info") or {}
+            label = info.get("name") or self._short_companion_id(
+                info.get("public_key")
+            )
+            details = {
+                "companion_name": info.get("name"),
+                "companion_public_key": info.get("public_key"),
+                "companion_radio_freq_mhz": info.get("radio_freq"),
+                "companion_radio_bw_khz": info.get("radio_bw"),
+            }
+            self.health_monitor.update_component(
+                "external",
+                HealthStatus.HEALTHY,
+                f"Companion identity: {label}",
+                details={
+                    key: value
+                    for key, value in details.items()
+                    if value not in (None, "")
+                },
+            )
+        elif kind == "device_info":
+            info = decoded_msg.get("device_info") or {}
+            model = info.get("model") or "MeshCore device"
+            version = info.get("ver")
+            if not version and info.get("fw_ver") is not None:
+                version = f"fw {info['fw_ver']}"
+            details = {
+                "companion_model": info.get("model"),
+                "companion_version": info.get("ver"),
+                "companion_fw_ver": info.get("fw_ver"),
+                "companion_max_contacts": info.get("max_contacts"),
+                "companion_max_channels": info.get("max_channels"),
+            }
+            message = f"Companion device: {model}"
+            if version:
+                message = f"{message} {version}"
+            self.health_monitor.update_component(
+                "external",
+                HealthStatus.HEALTHY,
+                message,
+                details={
+                    key: value
+                    for key, value in details.items()
+                    if value not in (None, "")
+                },
+            )
+
     def _contacts_poll_loop(self) -> None:
         """Periodically request contacts from MeshCore to surface adverts."""
         self.logger.info(
@@ -372,8 +518,9 @@ class MeshcoreHandler:
                         if decoded_msg.get("internal_only"):
                             kind = decoded_msg.get("companion_kind")
                             self.logger.info(
-                                "Companion event: %s", kind
+                                self._format_companion_event(decoded_msg)
                             )
+                            self._update_companion_health(decoded_msg)
                             # Handle message polling
                             if kind == "msg_waiting":
                                 if not self._companion_msg_polling:
@@ -627,10 +774,12 @@ class MeshcoreHandler:
         # CMD_SEND_CHANNEL_TXT_MSG (3)
         txt_type = 0
         channel_idx = int(item.get("channel_index", 0))
-        sender_meshtastic_id = item.get("sender_meshtastic_id", "Unknown")
+        sender_meshtastic_id = item.get("sender_meshtastic_id")
 
-        # Prepend Meshtastic ID to outgoing MeshCore message
-        payload = f"{sender_meshtastic_id}: {payload}"
+        # Preserve the raw text when the upstream message does not carry a
+        # sender ID; only prepend resolved Meshtastic IDs.
+        if isinstance(sender_meshtastic_id, str) and sender_meshtastic_id.strip():
+            payload = f"{sender_meshtastic_id}: {payload}"
 
         if self.config.meshtastic_channel_index is not None and self.config.meshcore_channel_index is not None:
             if channel_idx == self.config.meshtastic_channel_index:

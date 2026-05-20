@@ -93,6 +93,26 @@ def test_build_config_rows_redacts_mqtt_password():
     assert rows["MQTT Broker"] == "broker.example:1883"
 
 
+def test_build_config_rows_only_show_companion_fields_for_companion_protocol():
+    standard_rows = dict(build_config_rows(make_config(serial_protocol="json_newline")))
+    companion_rows = dict(
+        build_config_rows(
+            make_config(
+                serial_protocol="companion_radio",
+                companion_contacts_poll_s=30,
+                companion_debug=True,
+            )
+        )
+    )
+
+    assert "Companion Handshake" not in standard_rows
+    assert "Companion Poll" not in standard_rows
+    assert "Companion Debug" not in standard_rows
+    assert companion_rows["Companion Handshake"] == "enabled"
+    assert companion_rows["Companion Poll"] == "30s"
+    assert companion_rows["Companion Debug"] == "enabled"
+
+
 def test_bridge_controller_start_and_stop():
     controller = BridgeController(make_config(), bridge_factory=FakeBridge)
 
@@ -126,8 +146,7 @@ def test_bridge_controller_reports_init_failure():
     assert controller.snapshot().state == "error"
 
 
-@pytest.mark.asyncio
-async def test_bridge_dashboard_app_mounts():
+def test_bridge_dashboard_app_mounts(monkeypatch):
     config = make_config()
     store = DashboardStore()
     controller = BridgeController(
@@ -141,7 +160,26 @@ async def test_bridge_dashboard_app_mounts():
         store=store,
     )
 
-    async with app.run_test(size=(160, 48)) as pilot:
-        await pilot.pause()
+    refresh_calls = []
+    interval_calls = []
+
+    monkeypatch.setattr(
+        app,
+        "refresh_dashboard",
+        lambda: refresh_calls.append("refresh"),
+    )
+    monkeypatch.setattr(
+        app,
+        "set_interval",
+        lambda interval, callback: interval_calls.append((interval, callback)),
+    )
+
+    app.on_mount()
+
+    assert app.title == "Akita Mesh Bridge Command Center"
+    assert app.sub_title == config.external_transport.upper()
+    assert refresh_calls == ["refresh"]
+    assert interval_calls == [(1.0, app.refresh_dashboard)]
+    assert controller.snapshot().state == "running"
 
     controller.stop(wait=True)

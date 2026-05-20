@@ -14,6 +14,10 @@
 - **Added** `channel_index` key to `external_message` dict
 - **Added** Meshtastic ID to messages bridged to MeshCore
 - **Added** contact packet types to protocol handler
+- **Added** structured decoding for companion contact records, self info, device info, and new adverts.
+- **Improved** companion event visibility in sync logs and the command center log tail.
+- **Updated** the terminal command center configuration panel to show companion-only settings only when `companion_radio` is active, including `COMPANION_DEBUG`.
+- **Updated** configuration, usage, README, and architecture documentation for the companion metadata flow.
 ---
 
 ## Version 2.0.0 - Comprehensive Code Review and Enhancements (December 31, 2025)

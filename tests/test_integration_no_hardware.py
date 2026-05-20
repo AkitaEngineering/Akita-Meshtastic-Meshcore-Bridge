@@ -716,6 +716,42 @@ class TestMTtoMC_Encoding:
         assert text == "Hello MeshCore!"
 
     @patch("ammb.meshcore_handler.serial.Serial")
+    def test_meshtastic_sender_id_is_prefixed_when_present(self, mock_serial_cls):
+        from ammb.meshcore_handler import MeshcoreHandler
+
+        to_mesh_q = Queue(maxsize=10)
+        from_mesh_q = Queue(maxsize=10)
+        shutdown = threading.Event()
+        config = _make_bridge_config()
+
+        mock_port = MagicMock()
+        mock_port.is_open = True
+        mock_serial_cls.return_value = mock_port
+
+        handler = MeshcoreHandler(config, to_mesh_q, from_mesh_q, shutdown)
+        handler.connect()
+        mock_port.write.reset_mock()
+
+        from_mesh_q.put(
+            {
+                "type": "meshtastic_message",
+                "payload": "Hello MeshCore!",
+                "channel_index": 0,
+                "sender_meshtastic_id": "!deadbeef",
+            }
+        )
+
+        shutdown_timer = threading.Timer(0.6, shutdown.set)
+        shutdown_timer.start()
+        handler._serial_sender_loop()
+
+        written = mock_port.write.call_args_list[-1].args[0]
+        length = written[1] | (written[2] << 8)
+        cmd_payload = written[3 : 3 + length]
+
+        assert cmd_payload[7:].decode("utf-8") == "!deadbeef: Hello MeshCore!"
+
+    @patch("ammb.meshcore_handler.serial.Serial")
     def test_non_text_meshtastic_msg_skipped(self, mock_serial_cls):
         """Non-text Meshtastic messages should not be encoded."""
         from ammb.meshcore_handler import MeshcoreHandler
@@ -875,10 +911,12 @@ class TestProtocolRoundTrips:
         assert decoded["companion_kind"] == "advert"
         assert decoded["pubkey"].startswith("abab")
 
-    def test_log_rx_data_returns_none(self):
+    def test_log_rx_data_decoded_as_internal(self):
         proto = MeshcoreCompanionProtocol()
         decoded = proto.decode(_log_rx_data_payload())
-        assert decoded is None, "0x88 LOG_RX_DATA should return None"
+        assert decoded is not None
+        assert decoded["companion_kind"] == "log_data"
+        assert decoded["internal_only"] is True
 
     def test_framing_write_read_symmetry(self):
         """Write an inbound frame, flip to outbound header, read it back."""
@@ -913,14 +951,16 @@ class TestReproduceOriginalBugs:
     def test_0x88_no_longer_misidentified_as_channel_msg(self):
         """The user's log showed 0x88 (PUSH_CODE_LOG_RX_DATA) being decoded
         as channel_index=49 (the SNR byte), which the validator rejected.
-        Verify it is now safely ignored."""
+        Verify it is now treated as an internal-only event instead."""
         proto = MeshcoreCompanionProtocol()
 
         # Simulate the kind of payload the radio sends for LOG_RX_DATA
         # [0x88][SNR=0x31][...data...]
         raw = bytes([0x88, 0x31, 0x00, 0x00, 0x01, 0x00, 0x00]) + b"Test log data"
         decoded = proto.decode(raw)
-        assert decoded is None
+        assert decoded is not None
+        assert decoded["companion_kind"] == "log_data"
+        assert decoded["internal_only"] is True
 
     def test_advert_no_longer_forwarded_as_text(self):
         """The user saw 'MC_ADVERT:db46 --------' on Meshtastic chat.

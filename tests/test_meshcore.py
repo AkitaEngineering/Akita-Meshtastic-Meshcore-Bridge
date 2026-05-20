@@ -261,12 +261,14 @@ class TestMeshcoreCompanionProtocol:
         assert result["snr"] == 5
 
     def test_decode_push_channel_msg(self, handler):
-        """0x88 is PUSH_CODE_LOG_RX_DATA (not a channel msg) and should be ignored."""
+        """0x88 is PUSH_CODE_LOG_RX_DATA and should stay internal-only."""
         ts = 4000
         ts_bytes = ts.to_bytes(4, "little")
         raw = bytes([0x88, 1, 0, 0]) + ts_bytes + b"push channel"
         result = handler.decode(raw)
-        assert result is None  # 0x88 is not a channel message
+        assert result is not None
+        assert result["companion_kind"] == "log_data"
+        assert result["internal_only"] is True
 
     def test_decode_push_contact_msg(self, handler):
         """0x87 is PUSH_CODE_STATUS_RESPONSE (not a contact msg) and should be ignored."""
@@ -340,12 +342,25 @@ class TestMeshcoreCompanionProtocol:
 
     def test_decode_new_advert(self, handler):
         pubkey = bytes(range(32))
-        raw = bytes([0x8A]) + pubkey
+        path = bytes.fromhex("aabb") + (b"\x00" * 62)
+        adv_name = b"Field Unit" + (b"\x00" * 22)
+        raw = (
+            bytes([0x8A])
+            + pubkey
+            + bytes([1, 0, 2])
+            + path
+            + adv_name
+            + (77).to_bytes(4, "little")
+            + int(34.123456 * 1_000_000).to_bytes(4, "little", signed=True)
+            + int(-117.123456 * 1_000_000).to_bytes(4, "little", signed=True)
+            + (78).to_bytes(4, "little")
+        )
         result = handler.decode(raw)
         assert result is not None
         assert result["companion_kind"] == "new_advert"
         assert result["internal_only"] is True
-        assert result["pubkey"] == pubkey.hex()
+        assert result["advert"]["public_key"] == pubkey.hex()
+        assert result["advert"]["adv_name"] == "Field Unit"
         assert "payload" not in result
 
     def test_decode_unknown_frame_returns_none(self, handler):
@@ -378,10 +393,12 @@ class TestMeshcoreCompanionProtocol:
         assert result["internal_only"] is True
 
     def test_decode_log_rx_data_ignored(self, handler):
-        """PUSH_CODE_LOG_RX_DATA (0x88) should be ignored (return None)."""
+        """PUSH_CODE_LOG_RX_DATA (0x88) should be decoded as internal-only."""
         raw = bytes([0x88]) + b"\x00" * 50
         result = handler.decode(raw)
-        assert result is None
+        assert result is not None
+        assert result["companion_kind"] == "log_data"
+        assert result["internal_only"] is True
 
 
 # =========================================================================
@@ -744,6 +761,39 @@ class TestMeshcoreHandler:
 
         handler._switch_protocol()
         assert handler._protocol_name == original_protocol  # unchanged
+
+    def test_format_companion_event_summaries(self):
+        from ammb.meshcore_handler import MeshcoreHandler
+
+        config = _make_bridge_config(serial_protocol="companion_radio")
+        handler = MeshcoreHandler(config, Queue(), Queue(), threading.Event())
+
+        contact_summary = handler._format_companion_event(
+            {
+                "companion_kind": "contact_info",
+                "contact": {
+                    "adv_name": "Desk Node",
+                    "public_key": "0011223344556677",
+                },
+            }
+        )
+        device_summary = handler._format_companion_event(
+            {
+                "companion_kind": "device_info",
+                "device_info": {
+                    "model": "Akita MeshCore Board",
+                    "ver": "2.1.1",
+                    "max_contacts": 32,
+                    "max_channels": 8,
+                },
+            }
+        )
+
+        assert contact_summary == "Companion contact discovered: Desk Node [00112233]."
+        assert device_summary == (
+            "Companion device info: Akita MeshCore Board 2.1.1 "
+            "(32 contacts, 8 channels)."
+        )
 
     @patch("ammb.meshcore_handler.serial.Serial")
     def test_close_serial(self, mock_serial_cls, handler_parts):

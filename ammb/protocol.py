@@ -166,8 +166,6 @@ class RawSerialProtocol(MeshcoreProtocolHandler):
 
 
 # --- Meshcore Companion Radio Protocol Handler ---
-import struct
-
 class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
     """
     Handles the Meshcore Companion Radio Protocol (USB framing).
@@ -241,6 +239,120 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
         except Exception as e:
             self.logger.error("Error encoding companion frame: %s", e)
             return None
+
+    @staticmethod
+    def _decode_companion_string(raw_data: bytes) -> str:
+        return raw_data.split(b"\x00", 1)[0].decode("utf-8", "ignore")
+
+    def _decode_contact_record(
+        self,
+        raw_data: bytes,
+        *,
+        key_name: str,
+        payload_key: str,
+    ) -> Optional[Dict[str, Any]]:
+        minimum_length = 1 + 32 + 1 + 1 + 1 + 64 + 32 + 4 + 4 + 4 + 4
+        if len(raw_data) < minimum_length:
+            self.logger.warning(
+                "Companion contact record too short to decode: %s",
+                raw_data.hex(),
+            )
+            return None
+
+        path_len = int.from_bytes(raw_data[35:36], "little", signed=True)
+        path_bytes = raw_data[36:100]
+        effective_path_len = max(0, min(path_len, len(path_bytes)))
+        record = {
+            "public_key": raw_data[1:33].hex(),
+            "type": raw_data[33],
+            "flags": raw_data[34],
+            "out_path_len": path_len,
+            "out_path": path_bytes[:effective_path_len].hex(),
+            "adv_name": self._decode_companion_string(raw_data[100:132]),
+            "last_advert": int.from_bytes(raw_data[132:136], "little", signed=False),
+            "adv_lat": int.from_bytes(raw_data[136:140], "little", signed=True) / 1_000_000,
+            "adv_lon": int.from_bytes(raw_data[140:144], "little", signed=True) / 1_000_000,
+            "lastmod": int.from_bytes(raw_data[144:148], "little", signed=False),
+        }
+        return {
+            "companion_kind": key_name,
+            payload_key: record,
+            "internal_only": True,
+            "protocol": "companion_radio",
+        }
+
+    def _decode_self_info(self, raw_data: bytes) -> Optional[Dict[str, Any]]:
+        minimum_length = 1 + 1 + 1 + 1 + 32 + 4 + 4 + 1 + 1 + 1 + 1 + 4 + 4 + 1 + 1
+        if len(raw_data) < minimum_length:
+            self.logger.warning(
+                "Companion self-info frame too short to decode: %s",
+                raw_data.hex(),
+            )
+            return None
+
+        telemetry_mode = raw_data[46]
+        return {
+            "companion_kind": "self_info",
+            "self_info": {
+                "adv_type": raw_data[1],
+                "tx_power": raw_data[2],
+                "max_tx_power": raw_data[3],
+                "public_key": raw_data[4:36].hex(),
+                "adv_lat": int.from_bytes(raw_data[36:40], "little", signed=True) / 1_000_000,
+                "adv_lon": int.from_bytes(raw_data[40:44], "little", signed=True) / 1_000_000,
+                "multi_acks": raw_data[44],
+                "adv_loc_policy": raw_data[45],
+                "telemetry_mode_env": (telemetry_mode >> 4) & 0b11,
+                "telemetry_mode_loc": (telemetry_mode >> 2) & 0b11,
+                "telemetry_mode_base": telemetry_mode & 0b11,
+                "manual_add_contacts": raw_data[47] > 0,
+                "radio_freq": int.from_bytes(raw_data[48:52], "little", signed=False) / 1000,
+                "radio_bw": int.from_bytes(raw_data[52:56], "little", signed=False) / 1000,
+                "radio_sf": raw_data[56],
+                "radio_cr": raw_data[57],
+                "name": self._decode_companion_string(raw_data[58:]),
+            },
+            "internal_only": True,
+            "protocol": "companion_radio",
+        }
+
+    def _decode_device_info(self, raw_data: bytes) -> Optional[Dict[str, Any]]:
+        if len(raw_data) < 2:
+            self.logger.warning(
+                "Companion device-info frame too short to decode: %s",
+                raw_data.hex(),
+            )
+            return None
+
+        fw_ver = raw_data[1]
+        device_info = {"fw_ver": fw_ver}
+        if fw_ver >= 3:
+            minimum_length = 1 + 1 + 1 + 1 + 4 + 12 + 40 + 20
+            if len(raw_data) < minimum_length:
+                self.logger.warning(
+                    "Companion device-info payload too short for fw_ver %d: %s",
+                    fw_ver,
+                    raw_data.hex(),
+                )
+                return None
+
+            device_info.update(
+                {
+                    "max_contacts": raw_data[2] * 2,
+                    "max_channels": raw_data[3],
+                    "ble_pin": int.from_bytes(raw_data[4:8], "little", signed=False),
+                    "fw_build": self._decode_companion_string(raw_data[8:20]),
+                    "model": self._decode_companion_string(raw_data[20:60]),
+                    "ver": self._decode_companion_string(raw_data[60:80]),
+                }
+            )
+
+        return {
+            "companion_kind": "device_info",
+            "device_info": device_info,
+            "internal_only": True,
+            "protocol": "companion_radio",
+        }
 
     def decode(self, raw_data: bytes) -> Optional[Dict[str, Any]]:
         """Decode companion payload bytes into a dict.
@@ -398,39 +510,37 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             }
 
         if code == 0x02:  # CONTACT_START
+            if len(raw_data) < 5:
+                return None
             return {
                 "companion_kind": "contact_start",
+                "contact_count": int.from_bytes(raw_data[1:5], "little", signed=False),
                 "internal_only": True,
                 "protocol": "companion_radio",
             }
 
         if code == 0x03:  # CONTACT_INFO
-            return {
-                "companion_kind": "contact_info",
-                "internal_only": True,
-                "protocol": "companion_radio",
-            }
+            return self._decode_contact_record(
+                raw_data,
+                key_name="contact_info",
+                payload_key="contact",
+            )
 
         if code == 0x04:  # CONTACT_END
+            if len(raw_data) < 5:
+                return None
             return {
                 "companion_kind": "contact_end",
+                "lastmod": int.from_bytes(raw_data[1:5], "little", signed=False),
                 "internal_only": True,
                 "protocol": "companion_radio",
             }
 
         if code == 0x05:  # SELF_INFO
-            return {
-                "companion_kind": "self_info",
-                "internal_only": True,
-                "protocol": "companion_radio",
-            }
+            return self._decode_self_info(raw_data)
 
         if code == 0x0D:  # DEVICE_INFO
-            return {
-                "companion_kind": "device_info",
-                "internal_only": True,
-                "protocol": "companion_radio",
-            }
+            return self._decode_device_info(raw_data)
 
         # --- PUSH codes (unsolicited events from the radio) ---
 
@@ -438,7 +548,6 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             if len(raw_data) < 1 + 32:
                 return None
             pubkey = raw_data[1:33]
-            self.logger.info("MeshCore advert from: %s", pubkey[:4].hex())
             return {
                 "companion_kind": "advert",
                 "pubkey": pubkey.hex(),
@@ -474,16 +583,12 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             }
 
         if code == 0x8A:  # PUSH_CODE_NEW_ADVERT
-            if len(raw_data) < 1 + 32:
-                return None
-            pubkey = raw_data[1:33]
-            self.logger.info("MeshCore new advert from: %s", pubkey[:4].hex())
-            return {
-                "companion_kind": "new_advert",
-                "pubkey": pubkey.hex(),
-                "internal_only": True,
-                "protocol": "companion_radio",
-            }
+            decoded = self._decode_contact_record(
+                raw_data,
+                key_name="new_advert",
+                payload_key="advert",
+            )
+            return decoded
 
         # Ignore non-message frames
         self.logger.debug("Ignoring companion frame code: 0x%02x", code)

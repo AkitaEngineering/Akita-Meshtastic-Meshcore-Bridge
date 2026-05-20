@@ -52,6 +52,7 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
   - `COMPANION_DEBUG = False` (enable raw byte logging)
   - `SERIAL_AUTO_SWITCH = True` (auto-switch between `json_newline` and `raw_serial` on repeated decode failures)
   - `MESHTASTIC_CHANNEL_INDEX = 1` and `MESHCORE_CHANNEL_INDEX = 2` e.g. only bridge messages from Meshtastic channel index 1 to/from MeshCore channel index 2
+  - Companion device info, self info, contact sync, and adverts are decoded into structured events and surfaced in the sync logs and the terminal command center log tail
 
 - **For MQTT:**  
   Set `EXTERNAL_TRANSPORT = mqtt` and configure broker details. Optionally enable TLS/SSL for secure connections.

@@ -1,6 +1,6 @@
 # Configuration Guide
 
-**Last Updated: April 21, 2026**
+**Last Updated: May 19, 2026**
 
 The Akita Meshtastic Meshcore Bridge (AMMB) uses a configuration file named `config.ini` located in the project's root directory. Copy `examples/config.ini.example` to `config.ini` and modify it according to your setup.
 
@@ -51,8 +51,8 @@ These settings are only used when `EXTERNAL_TRANSPORT = serial`.
     * **Description:** Specifies how messages are formatted over the serial connection.
     * **Supported Values:**
         * `json_newline`: Messages are newline-terminated UTF-8 JSON strings (default for structured data)
-        * `raw_serial`: Raw binary/text bytes forwarded as hex (for MeshCore Companion Mode)
-        * `companion_radio`: MeshCore Companion USB framing protocol (for MeshCore radios)
+        * `raw_serial`: Raw binary/text bytes forwarded as hex (useful for low-level passthrough or diagnostics)
+        * `companion_radio`: MeshCore Companion USB framing protocol with structured decoding for message, contact, self-info, device-info, and advert frames
     * **Required:** Yes (when using serial transport)
     * **Default:** `json_newline`
 
@@ -61,6 +61,28 @@ These settings are only used when `EXTERNAL_TRANSPORT = serial`.
     * **Values:** `True`, `False`
     * **Required:** No
     * **Default:** `True`
+
+### MeshCore Companion Settings
+
+These settings only apply when `EXTERNAL_TRANSPORT = serial` and `SERIAL_PROTOCOL = companion_radio`.
+
+* **`COMPANION_HANDSHAKE_ENABLED`**
+    * **Description:** Send MeshCore companion startup commands after the serial port opens so the bridge can query device capabilities and begin message polling.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `True`
+
+* **`COMPANION_CONTACTS_POLL_S`**
+    * **Description:** Periodically request the MeshCore contact book to surface adverts and contact metadata in the bridge logs and dashboard log tail. Set to `0` to disable polling.
+    * **Range:** `0` and above (seconds)
+    * **Required:** No
+    * **Default:** `0`
+
+* **`COMPANION_DEBUG`**
+    * **Description:** Enable verbose raw companion frame logging for troubleshooting USB framing and decode problems.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `False`
 
 ### MQTT Transport Settings
 

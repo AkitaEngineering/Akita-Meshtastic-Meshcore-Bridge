@@ -1,6 +1,6 @@
 # Usage Guide
 
-**Last Updated: May 18, 2026**
+**Last Updated: May 19, 2026**
 
 This guide explains how to run and interact with the Akita Meshtastic Meshcore Bridge (AMMB).
 
@@ -67,6 +67,7 @@ Notes:
 * The bridge will attempt to connect to both the Meshtastic and external devices based on your `config.ini`
 * If a connection fails initially (e.g., device not plugged in), it will log a warning or error and periodically retry in the background
 * Once running, it will log messages received and sent on both networks (depending on your `LOG_LEVEL`)
+* When using `SERIAL_PROTOCOL = companion_radio`, the logs also show structured MeshCore control events such as self info, device info, contact sync progress, and new adverts
 
 ### Full-Screen Terminal Command Center
 
@@ -113,6 +114,7 @@ If you are running `python run_bridge_tui.py`, the command center becomes the pr
 * queue depth and message counters
 * recent warnings and errors in the event feed
 * the live log tail without leaving the dashboard
+* companion protocol metadata such as MeshCore identity, device capabilities, and contact/advert discovery when `companion_radio` is enabled
 
 ### Log Level
 

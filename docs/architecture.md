@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-**Last Updated: May 18, 2026**
+**Last Updated: May 19, 2026**
 
 This document describes the architecture and design of the Akita Meshtastic Meshcore Bridge (AMMB).
 
@@ -60,7 +60,8 @@ The command center is implemented in `ammb/tui.py`. It launches the synchronous 
 
 5. **Protocol Handlers** (`ammb/protocol.py`)
    - Abstract base class for serial protocols
-   - Implementations: `JsonNewlineProtocol`, `RawSerialProtocol`
+   - Implementations: `JsonNewlineProtocol`, `RawSerialProtocol`, `MeshcoreCompanionProtocol`
+   - `MeshcoreCompanionProtocol` decodes both user messages and MeshCore management frames such as contact sync records, self info, device info, and adverts into structured bridge events
    - Extensible for custom protocols
 
 6. **Configuration Handler** (`ammb/config_handler.py`)
