@@ -627,6 +627,10 @@ class MeshcoreHandler:
         # CMD_SEND_CHANNEL_TXT_MSG (3)
         txt_type = 0
         channel_idx = int(item.get("channel_index", 0))
+        sender_meshtastic_id = item.get("sender_meshtastic_id", "Unknown")
+
+        # Prepend Meshtastic ID to outgoing MeshCore message
+        payload = f"{sender_meshtastic_id}: {payload}"
 
         if self.config.meshtastic_channel_index is not None and self.config.meshcore_channel_index is not None:
             if channel_idx == self.config.meshtastic_channel_index:

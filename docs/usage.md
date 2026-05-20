@@ -189,7 +189,8 @@ Messages from Meshtastic are translated to the following format:
   "payload": "Hello from Meshtastic",
   "timestamp_rx": 1704067200.0,
   "rx_rssi": -85,
-  "rx_snr": 5.2
+  "rx_snr": 5.2,
+  "channel_index": 0
 }
 ```
 
