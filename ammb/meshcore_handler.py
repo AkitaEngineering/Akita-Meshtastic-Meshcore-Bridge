@@ -775,11 +775,18 @@ class MeshcoreHandler:
         txt_type = 0
         channel_idx = int(item.get("channel_index", 0))
         sender_meshtastic_id = item.get("sender_meshtastic_id")
+        sender_display_name = item.get("sender_display_name")
+        sender_label = (
+            sender_display_name
+            if isinstance(sender_display_name, str)
+            and sender_display_name.strip()
+            else sender_meshtastic_id
+        )
 
         # Preserve the raw text when the upstream message does not carry a
-        # sender ID; only prepend resolved Meshtastic IDs.
-        if isinstance(sender_meshtastic_id, str) and sender_meshtastic_id.strip():
-            payload = f"{sender_meshtastic_id}: {payload}"
+        # sender label; only prepend resolved Meshtastic sender details.
+        if isinstance(sender_label, str) and sender_label.strip():
+            payload = f"{sender_label}: {payload}"
 
         if self.config.meshtastic_channel_index is not None and self.config.meshcore_channel_index is not None:
             if channel_idx == self.config.meshtastic_channel_index:

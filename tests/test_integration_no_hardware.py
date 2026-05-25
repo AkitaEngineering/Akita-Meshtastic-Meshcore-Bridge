@@ -165,6 +165,52 @@ def _log_rx_data_payload() -> bytes:
     return bytes([0x88]) + bytes(range(20))
 
 
+def test_meshtastic_receive_adds_sender_display_name_when_available():
+    from ammb.meshtastic_handler import MeshtasticHandler
+
+    to_external_q = Queue(maxsize=10)
+    from_external_q = Queue(maxsize=10)
+    shutdown = threading.Event()
+    config = _make_bridge_config()
+
+    handler = MeshtasticHandler(
+        config,
+        to_external_q,
+        from_external_q,
+        shutdown,
+    )
+    interface = MagicMock()
+    interface.lastPacket = None
+    interface.nodesByNum = {
+        0xDEADBEEF: {
+            "user": {
+                "id": "!deadbeef",
+                "shortName": "Akita",
+                "longName": "Akita Field Node",
+            }
+        }
+    }
+
+    handler._on_meshtastic_receive(
+        {
+            "from": 0xDEADBEEF,
+            "decoded": {
+                "portnum": "TEXT_MESSAGE_APP",
+                "payload": b"Hello MeshCore!",
+            },
+            "channel": 0,
+            "rxRssi": -70,
+            "rxSnr": 9.5,
+        },
+        interface,
+    )
+
+    message = to_external_q.get_nowait()
+
+    assert message["sender_meshtastic_id"] == "!deadbeef"
+    assert message["sender_display_name"] == "Akita Field Node"
+    assert message["payload"] == "Hello MeshCore!"
+
 # ---------------------------------------------------------------------------
 # Fixture: create MeshcoreHandler wired with companion_radio protocol
 # ---------------------------------------------------------------------------
@@ -750,6 +796,45 @@ class TestMTtoMC_Encoding:
         cmd_payload = written[3 : 3 + length]
 
         assert cmd_payload[7:].decode("utf-8") == "!deadbeef: Hello MeshCore!"
+
+    @patch("ammb.meshcore_handler.serial.Serial")
+    def test_meshtastic_sender_display_name_is_prefixed_when_present(self, mock_serial_cls):
+        from ammb.meshcore_handler import MeshcoreHandler
+
+        to_mesh_q = Queue(maxsize=10)
+        from_mesh_q = Queue(maxsize=10)
+        shutdown = threading.Event()
+        config = _make_bridge_config()
+
+        mock_port = MagicMock()
+        mock_port.is_open = True
+        mock_serial_cls.return_value = mock_port
+
+        handler = MeshcoreHandler(config, to_mesh_q, from_mesh_q, shutdown)
+        handler.connect()
+        mock_port.write.reset_mock()
+
+        from_mesh_q.put(
+            {
+                "type": "meshtastic_message",
+                "payload": "Hello MeshCore!",
+                "channel_index": 0,
+                "sender_meshtastic_id": "!deadbeef",
+                "sender_display_name": "Akita Field Node",
+            }
+        )
+
+        shutdown_timer = threading.Timer(0.6, shutdown.set)
+        shutdown_timer.start()
+        handler._serial_sender_loop()
+
+        written = mock_port.write.call_args_list[-1].args[0]
+        length = written[1] | (written[2] << 8)
+        cmd_payload = written[3 : 3 + length]
+
+        assert cmd_payload[7:].decode("utf-8") == (
+            "Akita Field Node: Hello MeshCore!"
+        )
 
     @patch("ammb.meshcore_handler.serial.Serial")
     def test_non_text_meshtastic_msg_skipped(self, mock_serial_cls):

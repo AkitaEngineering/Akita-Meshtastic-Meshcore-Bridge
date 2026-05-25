@@ -923,6 +923,35 @@ class TestMeshcoreHandler:
         assert encoded[0] == 0x3C
 
     @patch("ammb.meshcore_handler.serial.Serial")
+    def test_encode_companion_prefers_sender_display_name(self, mock_serial_cls, handler_parts):
+        config, to_mesh_q, from_mesh_q, shutdown = handler_parts
+        from ammb.meshcore_handler import MeshcoreHandler
+
+        config = _make_bridge_config(serial_protocol="companion_radio")
+        mock_port = MagicMock()
+        mock_port.is_open = True
+        mock_serial_cls.return_value = mock_port
+
+        handler = MeshcoreHandler(config, to_mesh_q, from_mesh_q, shutdown)
+
+        item = {
+            "type": "meshtastic_message",
+            "payload": "Hello from Meshtastic",
+            "channel_index": 0,
+            "sender_meshtastic_id": "!deadbeef",
+            "sender_display_name": "Akita Field Node",
+        }
+        encoded = handler._encode_companion_from_meshtastic(item)
+
+        assert encoded is not None
+
+        length = encoded[1] | (encoded[2] << 8)
+        cmd_payload = encoded[3 : 3 + length]
+        assert cmd_payload[7:].decode("utf-8") == (
+            "Akita Field Node: Hello from Meshtastic"
+        )
+
+    @patch("ammb.meshcore_handler.serial.Serial")
     def test_encode_companion_skips_non_text(self, mock_serial_cls, handler_parts):
         config, to_mesh_q, from_mesh_q, shutdown = handler_parts
         from ammb.meshcore_handler import MeshcoreHandler

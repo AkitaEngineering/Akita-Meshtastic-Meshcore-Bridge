@@ -185,6 +185,31 @@ class MeshtasticHandler:
 
         self.logger.info("Meshtastic handler stopped.")
 
+    def _resolve_sender_display_name(
+        self,
+        interface: Any,
+        sender_id_num: Any,
+    ) -> Optional[str]:
+        source_interface = interface or self.interface
+        nodes_by_num = getattr(source_interface, "nodesByNum", None)
+        if not isinstance(sender_id_num, int) or not isinstance(nodes_by_num, dict):
+            return None
+
+        node_info = nodes_by_num.get(sender_id_num)
+        if not isinstance(node_info, dict):
+            return None
+
+        user_info = node_info.get("user")
+        if not isinstance(user_info, dict):
+            return None
+
+        for field in ("longName", "shortName"):
+            value = user_info.get(field)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return None
+
     def _on_meshtastic_receive(self, packet: Dict[str, Any], interface: Any, weak=None):
         try:
             # Log raw protobuf as JSON if available
@@ -203,6 +228,10 @@ class MeshtasticHandler:
                 f"!{sender_id_num:x}"
                 if isinstance(sender_id_num, int)
                 else "UNKNOWN"
+            )
+            sender_display_name = self._resolve_sender_display_name(
+                interface,
+                sender_id_num,
             )
             portnum = packet.get("decoded", {}).get("portnum", "UNKNOWN")
             payload_bytes = packet.get("decoded", {}).get("payload")
@@ -266,6 +295,8 @@ class MeshtasticHandler:
                     "rx_snr": packet.get("rxSnr"),
                     "channel_index": packet.get("channel"),
                 }
+                if sender_display_name is not None:
+                    external_message["sender_display_name"] = sender_display_name
 
                 try:
                     self.to_external_queue.put_nowait(external_message)
