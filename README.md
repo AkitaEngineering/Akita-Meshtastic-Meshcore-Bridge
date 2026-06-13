@@ -63,6 +63,12 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
 
 ### Run (Sync or Async)
 
+- **Preflight check (recommended before field use):**
+  python run_bridge_tui.py --check
+
+- **Show effective config without secrets:**
+  python run_bridge_tui.py --print-config
+
 - **Synchronous (legacy):**
   python run_bridge.py
 
@@ -73,6 +79,9 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
   python run_bridge_async.py
 
 The command center uses the same `config.ini` as the synchronous bridge and adds:
+  - preflight diagnostics with actionable dependency, config, serial, MQTT, and API warnings
+  - config selection via `--config /path/to/config.ini` or the `AMMB_CONFIG` environment variable
+  - redacted config inspection with `--print-config`
   - live bridge state, queue depth, and connection visibility
   - a full-screen health and metrics dashboard
   - recent events and a scrolling log tail

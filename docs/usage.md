@@ -23,6 +23,16 @@ Ensure you have completed the steps in the [Installation & Usage](../README.md#i
 
 3. **Choose the runtime mode that matches how you want to operate the bridge:**
 
+  **Preflight check before starting hardware workflows:**
+  ```bash
+  python run_bridge_tui.py --check
+  ```
+
+  **Print the effective configuration without secrets:**
+  ```bash
+  python run_bridge_tui.py --print-config
+  ```
+
   **Legacy synchronous runtime:**
   ```bash
   python run_bridge.py
@@ -43,6 +53,11 @@ Ensure you have completed the steps in the [Installation & Usage](../README.md#i
 * Use `python run_bridge.py` when you want the original thread-based runtime with plain terminal logs.
 * Use `python run_bridge_tui.py` when you want the full-screen dashboard with live metrics, health, controls, and log tail in one terminal window.
 * Use `python run_bridge_async.py` when you want the async runtime for `meshcore_py`, async MQTT, and the async API surface.
+
+Before deploying or troubleshooting, use `python run_bridge_tui.py --check`.
+It validates the config, checks required Python packages, warns about common serial/MQTT/API risks, and exits without opening hardware devices.
+
+The command center accepts `--config /path/to/config.ini`. If `--config` is not provided, it looks for `AMMB_CONFIG`, then `./config.ini`, then the project-root `config.ini`.
 
 ## Expected Behavior
 

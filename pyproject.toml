@@ -17,9 +17,11 @@ dependencies = {file = ["requirements.txt"]}
 packages = ["ammb"]
 py-modules = [
     "run_bridge",
-    "run_bridge_async"
+    "run_bridge_async",
+    "run_bridge_tui"
 ]
 
 [project.scripts]
 run-bridge = "run_bridge:main"
 run-bridge-async = "run_bridge_async:main"
+run-bridge-tui = "run_bridge_tui:main"
