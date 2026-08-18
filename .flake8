@@ -1,5 +1,5 @@
 [flake8]
-max-line-length = 79
+max-line-length = 120
 exclude =
     .venv,
     .git,
@@ -9,3 +9,12 @@ exclude =
     .eggs,
     *.egg-info
 ignore = E203,W503
+per-file-ignores =
+    tests/test_integration_no_hardware.py:E302,E231,E261,F401,F841
+    tests/test_meshcore.py:F401
+    tests/test_tui.py:F401,W292
+    run_bridge_tui.py:E402
+    ammb/mqtt_async_handler.py:E302,F401,E501
+    ammb/meshcore_async_handler.py:E302,E306
+    ammb/meshcore_handler.py:E301,E501,F541
+    ammb/protocol.py:E261

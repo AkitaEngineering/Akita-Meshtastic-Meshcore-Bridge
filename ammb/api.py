@@ -5,13 +5,40 @@ REST API for monitoring and controlling the bridge.
 
 import json
 import logging
+import secrets
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import urlparse
 
 from .health import get_health_monitor
 from .metrics import get_metrics
+from .version import __version__
+
+
+def extract_request_token(
+    authorization: Optional[str],
+    x_api_token: Optional[str],
+) -> Optional[str]:
+    """Extract an API token from common request headers."""
+    if x_api_token:
+        return x_api_token.strip()
+    if authorization:
+        scheme, _, value = authorization.partition(" ")
+        if scheme.lower() == "bearer" and value:
+            return value.strip()
+        if not value:
+            return authorization.strip()
+    return None
+
+
+def token_matches(expected: Optional[str], provided: Optional[str]) -> bool:
+    """Constant-time compare when a token is configured."""
+    if not expected:
+        return True
+    if not provided:
+        return False
+    return secrets.compare_digest(expected, provided)
 
 
 class BridgeAPIHandler(BaseHTTPRequestHandler):
@@ -24,10 +51,22 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Override to use our logger."""
         logger = logging.getLogger(__name__)
-        logger.debug(f"{self.address_string()} - {format % args}")
+        logger.debug("%s - %s", self.address_string(), format % args)
+
+    def _authorized(self) -> bool:
+        expected = getattr(self.bridge.config, "api_token", None)
+        provided = extract_request_token(
+            self.headers.get("Authorization"),
+            self.headers.get("X-API-Token"),
+        )
+        return token_matches(expected, provided)
 
     def do_GET(self):
         """Handle GET requests."""
+        if not self._authorized():
+            self._send_response(401, {"error": "Unauthorized"})
+            return
+
         parsed_path = urlparse(self.path)
         path = parsed_path.path.rstrip("/")
 
@@ -44,11 +83,15 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_response(404, {"error": "Not found"})
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Error handling API request: {e}", exc_info=True)
+            logger.error("Error handling API request: %s", e, exc_info=True)
             self._send_response(500, {"error": "Internal server error"})
 
     def do_POST(self):
         """Handle POST requests."""
+        if not self._authorized():
+            self._send_response(401, {"error": "Unauthorized"})
+            return
+
         parsed_path = urlparse(self.path)
         path = parsed_path.path.rstrip("/")
 
@@ -59,7 +102,7 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_response(404, {"error": "Not found"})
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Error handling API request: {e}", exc_info=True)
+            logger.error("Error handling API request: %s", e, exc_info=True)
             self._send_response(500, {"error": "Internal server error"})
 
     def _handle_health(self):
@@ -89,7 +132,7 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
         """Handle info request."""
         info = {
             "name": "Akita Meshtastic Meshcore Bridge",
-            "version": "1.0.0",
+            "version": __version__,
             "external_transport": (
                 self.bridge.config.external_transport
                 if self.bridge.config
@@ -138,6 +181,8 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(response)))
+        if status_code == 401:
+            self.send_header("WWW-Authenticate", "Bearer")
         self.end_headers()
         self.wfile.write(response)
 
@@ -152,7 +197,7 @@ class BridgeAPIServer:
         self.bridge = bridge_instance
         self.host = host
         self.port = port
-        self.server: Optional[HTTPServer] = None
+        self.server: Optional[ThreadingHTTPServer] = None
         self.server_thread: Optional[threading.Thread] = None
 
     def start(self):
@@ -164,17 +209,30 @@ class BridgeAPIServer:
             return BridgeAPIHandler(self.bridge, *args, **kwargs)
 
         try:
-            self.server = HTTPServer((self.host, self.port), handler_factory)
+            self.server = ThreadingHTTPServer(
+                (self.host, self.port), handler_factory
+            )
+            self.server.daemon_threads = True
+            self.server.allow_reuse_address = True
+            self.port = self.server.server_address[1]
             self.server_thread = threading.Thread(
                 target=self._serve, daemon=True, name="BridgeAPI"
             )
             self.server_thread.start()
+            token_state = (
+                "token required"
+                if getattr(self.bridge.config, "api_token", None)
+                else "no token configured"
+            )
             self.logger.info(
-                f"Bridge API server started on http://{self.host}:{self.port}"
+                "Bridge API server started on http://%s:%s (%s)",
+                self.host,
+                self.port,
+                token_state,
             )
         except Exception as e:
             self.logger.error(
-                f"Failed to start API server: {e}", exc_info=True
+                "Failed to start API server: %s", e, exc_info=True
             )
 
     def stop(self):

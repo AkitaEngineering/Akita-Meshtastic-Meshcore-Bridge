@@ -6,8 +6,18 @@ Rate limiting for message processing.
 import logging
 import time
 from collections import deque
-from threading import Lock
-from typing import Optional
+from threading import RLock
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config_handler import BridgeConfig
+
+
+def limiter_from_config(config: "BridgeConfig") -> "RateLimiter":
+    """Build a rate limiter from bridge configuration."""
+    max_messages = getattr(config, "rate_limit_max_messages", None) or 60
+    window = getattr(config, "rate_limit_window_s", None) or 60.0
+    return RateLimiter(max_messages=int(max_messages), time_window=float(window))
 
 
 class RateLimiter:
@@ -26,7 +36,7 @@ class RateLimiter:
         self.max_messages = max_messages
         self.time_window = time_window
         self.message_times: deque = deque()
-        self._lock = Lock()
+        self._lock = RLock()
         self.violations = 0
 
     def check_rate_limit(self, source: str = "unknown") -> bool:
@@ -100,7 +110,7 @@ class MultiSourceRateLimiter:
         self.max_messages = max_messages
         self.time_window = time_window
         self.limiters: dict[str, RateLimiter] = {}
-        self._lock = Lock()
+        self._lock = RLock()
 
     def check_rate_limit(self, source: str) -> bool:
         """Check rate limit for a specific source."""

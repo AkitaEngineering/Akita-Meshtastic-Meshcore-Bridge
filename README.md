@@ -22,7 +22,7 @@ This bridge enables interoperability, allowing messages, sensor data (with appro
 - **Metrics Collection:** Comprehensive statistics on messages, connections, and performance
 - **Full-Screen Command Center:** Textual-based terminal UI with live bridge state, metrics, health, queue depth, event feed, and log tail
 - **Message Validation:** Automatic validation and sanitization of all messages
-- **Rate Limiting:** Configurable rate limiting to prevent message flooding
+- **Rate Limiting:** Configurable per-window rate limiting to prevent message flooding
 - **MQTT TLS/SSL Support:** Secure MQTT connections with TLS/SSL encryption
 - **Comprehensive Logging:** Detailed logging with configurable log levels
 - **Message Persistence:** Optional message logging to file for analysis and debugging  
@@ -58,7 +58,7 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
   Set `EXTERNAL_TRANSPORT = mqtt` and configure broker details. Optionally enable TLS/SSL for secure connections.
 
 - **For REST API (Optional):**  
-  Set `API_ENABLED = True` and configure `API_HOST` and `API_PORT` to enable the monitoring API.
+  Set `API_ENABLED = True` and configure `API_HOST` and `API_PORT` to enable the monitoring API. Set `API_TOKEN` if the API is reachable beyond localhost.
 
 
 ### Run (Sync or Async)
@@ -69,13 +69,13 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
 - **Show effective config without secrets:**
   python run_bridge_tui.py --print-config
 
-- **Synchronous (legacy):**
+- **Production / headless (recommended):**
   python run_bridge.py
 
 - **Full-screen terminal command center:**
   python run_bridge_tui.py
 
-- **Async (recommended, for meshcore_py and async MQTT):**
+- **Async wrapper (same production bridge, optional in-process API):**
   python run_bridge_async.py
 
 The command center uses the same `config.ini` as the synchronous bridge and adds:
@@ -88,13 +88,9 @@ The command center uses the same `config.ini` as the synchronous bridge and adds
   - keyboard shortcuts: `S` start/stop, `R` restart, `M` reset metrics, `P` pause logs, `C` clear logs, `Q` quit
   - crash reports written to `ammb_tui_crash.log` if the dashboard hits an unhandled startup/runtime exception
 
-The async entry point supports:
-  - Async Meshcore integration (meshcore_py) with `CONTACT_MSG_RECV` and `CHANNEL_MSG_RECV` subscriptions
-  - Async MQTT (asyncio-mqtt)
-  - Async REST API (FastAPI, if enabled)
+Use `run_bridge.py` under a process manager for unattended production. Use the command center when an operator is present. `run_bridge_async.py` runs the same bidirectional bridge and can host FastAPI in-process so `/api/*` sees live metrics.
 
-#### Async API Server
-If `API_ENABLED = True` in your config, the async bridge will launch a FastAPI server for health, metrics, and control endpoints (see below).
+Both `run_bridge.py` and `run_bridge_async.py` accept `--config` and honor `AMMB_CONFIG`.
 
 
 ### REST API Endpoints (if enabled)

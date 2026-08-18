@@ -19,6 +19,7 @@ from pathlib import Path
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
+from ammb.config_handler import resolve_config_path
 from ammb.preflight import (
     RUNTIME_DEPENDENCIES,
     TUI_DEPENDENCIES,
@@ -38,15 +39,9 @@ def install_command(root_path: str) -> str:
 
 def default_config_path() -> str:
     """Return the default config path for repo and installed usage."""
-    env_path = os.environ.get("AMMB_CONFIG")
-    if env_path:
-        return env_path
-
-    cwd_config = os.path.join(os.getcwd(), "config.ini")
-    if os.path.exists(cwd_config):
-        return cwd_config
-
-    return os.path.join(project_root, "config.ini")
+    return resolve_config_path(
+        fallback=os.path.join(project_root, "config.ini")
+    )
 
 
 def check_runtime_dependencies(importer=import_module) -> list[str]:

@@ -93,6 +93,12 @@ def test_build_config_rows_redacts_mqtt_password():
     assert rows["MQTT Broker"] == "broker.example:1883"
 
 
+def test_build_config_rows_redacts_api_token():
+    rows = dict(build_config_rows(make_config(api_token="super-secret")))
+    assert rows["API Token"] == "configured (hidden)"
+    assert "super-secret" not in rows["API Token"]
+
+
 def test_build_config_rows_only_show_companion_fields_for_companion_protocol():
     standard_rows = dict(build_config_rows(make_config(serial_protocol="json_newline")))
     companion_rows = dict(

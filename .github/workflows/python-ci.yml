@@ -1,79 +1,50 @@
 # .github/workflows/python-ci.yml
-# Basic GitHub Actions workflow for the AMMB project
+# Lint, type-check, and test the AMMB project.
 
 name: Python CI for AMMB
 
-# Controls when the workflow will run
 on:
   push:
-    branches: [ "main" ] # Run on pushes to main branch
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ] # Run on pull requests targeting main branch
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches: ["main"]
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This job builds, lints, and tests the code
   build_and_test:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest # Use Linux runner
+    runs-on: ubuntu-latest
     strategy:
-      fail-fast: false # Don't cancel all jobs if one Python version fails
+      fail-fast: false
       matrix:
-        # Test on multiple supported Python versions
-        # pytest 9.0.3+ is required for CVE-2025-71176 and supports Python 3.10+.
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
-      # 1. Check out the repository code
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # 2. Set up Python environment
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      # 3. Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install runtime requirements first
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          # Install development requirements (includes testing tools)
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-        # Note: meshtastic might have specific OS dependencies for serial,
-        # but the tests shouldn't require actual hardware connection.
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
-      # 4. Lint with flake8 (Optional but recommended)
       - name: Lint with flake8
         run: |
-          # stop the build if there are Python syntax errors or undefined names
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-          flake8 . --count --exit-zero --max-complexity=12 --max-line-length=120 --statistics
+          flake8 ammb tests run_bridge.py run_bridge_async.py run_bridge_tui.py --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 ammb tests run_bridge.py run_bridge_async.py run_bridge_tui.py
 
-      # 5. Static Type Check with mypy (Optional but recommended)
-      #    Might require installing typeshed stubs for dependencies if errors occur
-      # - name: Type check with mypy
-      #   run: |
-      #     mypy ammb/ run_bridge.py --ignore-missing-imports
+      - name: Type check with mypy
+        run: |
+          mypy ammb/version.py ammb/api.py ammb/api_async.py \
+            ammb/bridge_async.py ammb/message_logger.py \
+            ammb/metrics.py ammb/rate_limiter.py \
+            run_bridge.py run_bridge_async.py
 
-      # 6. Test with pytest
       - name: Test with pytest
         run: |
-          # Run tests and generate coverage report
-          pytest --cov=ammb --cov-report=xml
-
-      # 7. Upload coverage reports to Codecov (Optional)
-      #    Requires setting up Codecov and adding CODECOV_TOKEN secret to GitHub repo
-      # - name: Upload coverage reports to Codecov
-      #   uses: codecov/codecov-action@v4.0.1 # Use specific version
-      #   with:
-      #     token: ${{ secrets.CODECOV_TOKEN }}
-      #     slug: YOUR_USERNAME/akita-meshtastic-meshcore-bridge # Optional: Your repo slug
-      #     fail_ci_if_error: true # Fail CI if upload error occurs
-
+          pytest --cov=ammb --cov-report=term-missing --cov-report=xml

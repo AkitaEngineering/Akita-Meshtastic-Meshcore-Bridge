@@ -103,6 +103,24 @@ MESSAGE_QUEUE_SIZE = 100
 API_ENABLED = False
 API_HOST = 127.0.0.1
 API_PORT = 8080
+# Optional bearer/X-API-Token secret. Required if API_HOST is 0.0.0.0.
+API_TOKEN =
+
+# --- Rate Limiting ---
+# Max forwarded messages allowed per RATE_LIMIT_WINDOW_S seconds
+RATE_LIMIT_MAX_MESSAGES = 60
+RATE_LIMIT_WINDOW_S = 60
+
+# --- Message Persistence ---
+# Optional JSONL message log. Leave blank to disable.
+MESSAGE_LOG_FILE =
+MESSAGE_LOG_MAX_MB = 10
+MESSAGE_LOG_MAX_BACKUPS = 5
+
+# --- Meshtastic Reconnect ---
+# Keep retrying if the Meshtastic radio is missing at boot
+MESHTASTIC_RETRY_ON_BOOT = True
+MESHTASTIC_RETRY_DELAY_S = 10
 
 # --- MQTT TLS/SSL Settings ---
 # Enable TLS/SSL for MQTT connections (only used if EXTERNAL_TRANSPORT = mqtt)

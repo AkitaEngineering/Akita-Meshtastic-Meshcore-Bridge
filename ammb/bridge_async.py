@@ -1,96 +1,98 @@
 # ammb/bridge_async.py
 """
-Async Bridge orchestrator using MeshcoreAsyncHandler.
+Async entry-point wrapper around the production Bridge.
+
+The production forwarding path is the same thread-based Bridge used by
+run_bridge.py. This wrapper adds an in-process FastAPI server so health
+and metrics share process state with the running bridge.
 """
 
 import asyncio
 import logging
+import threading
 from typing import Optional
 
-from ammb.meshcore_async_handler import MeshcoreAsyncHandler
-from ammb.mqtt_async_handler import MQTTAsyncHandler
+from ammb.bridge import Bridge
 from ammb.config_handler import BridgeConfig
 
 
-
 class AsyncBridge:
+    """Run the production bridge under asyncio, with an optional API."""
+
     def __init__(self, config: BridgeConfig):
         self.logger = logging.getLogger(__name__)
         self.config = config
-        self.meshcore_handler: Optional[MeshcoreAsyncHandler] = None
-        self.mqtt_handler: Optional[MQTTAsyncHandler] = None
+        self.bridge = Bridge(config)
         self._running = False
+        self._bridge_thread: Optional[threading.Thread] = None
 
     async def start(self):
+        """Start the production bridge and optional in-process API."""
         self._running = True
+        api_task: Optional[asyncio.Task] = None
+        server = None
+
+        if self.config.api_enabled:
+            try:
+                import uvicorn
+
+                from ammb.api_async import app, configure_async_api
+
+                configure_async_api(
+                    self.bridge,
+                    getattr(self.config, "api_token", None),
+                )
+                server_config = uvicorn.Config(
+                    app,
+                    host=self.config.api_host or "127.0.0.1",
+                    port=int(self.config.api_port or 8080),
+                    log_level="info",
+                )
+                server = uvicorn.Server(server_config)
+                api_task = asyncio.create_task(server.serve())
+                self.logger.info(
+                    "Async API server starting on http://%s:%s",
+                    self.config.api_host or "127.0.0.1",
+                    self.config.api_port or 8080,
+                )
+            except Exception as e:
+                self.logger.error(
+                    "Failed to start async API server: %s", e, exc_info=True
+                )
+
+        self._bridge_thread = threading.Thread(
+            target=self.bridge.run,
+            name="AMMB-Bridge",
+            daemon=True,
+        )
+        self._bridge_thread.start()
+        self.logger.info("Production bridge thread started.")
+
         try:
-            if self.config.external_transport == "serial":
-                self.meshcore_handler = MeshcoreAsyncHandler(
-                    serial_port=self.config.serial_port,
-                    baud=self.config.serial_baud or 115200,
-                    debug=self.config.log_level == "DEBUG",
-                )
-                try:
-                    # Subscribe to incoming message events before connect
-                    from meshcore import EventType
-                    self.meshcore_handler.subscribe(
-                        EventType.CONTACT_MSG_RECV, self.handle_incoming_message
-                    )
-                    self.meshcore_handler.subscribe(
-                        EventType.CHANNEL_MSG_RECV, self.handle_incoming_message
-                    )
-                    await self.meshcore_handler.run()
-                except Exception as e:
-                    self.logger.error(f"Unhandled exception in meshcore handler: {e}", exc_info=True)
-            elif self.config.external_transport == "mqtt":
-                self.mqtt_handler = MQTTAsyncHandler(
-                    broker=self.config.mqtt_broker,
-                    port=self.config.mqtt_port,
-                    topic_in=self.config.mqtt_topic_in,
-                    topic_out=self.config.mqtt_topic_out,
-                    username=self.config.mqtt_username,
-                    password=self.config.mqtt_password,
-                    qos=self.config.mqtt_qos or 0,
-                    retain=self.config.mqtt_retain_out or False,
-                    tls=self.config.mqtt_tls_enabled or False,
-                    tls_ca_certs=self.config.mqtt_tls_ca_certs,
-                    tls_insecure=self.config.mqtt_tls_insecure or False,
-                    client_id=self.config.mqtt_client_id,
-                )
-                try:
-                    self.mqtt_handler.set_message_handler(self.handle_mqtt_message)
-                    await self.mqtt_handler.connect()
-                    await self.mqtt_handler.run()
-                except Exception as e:
-                    self.logger.error(f"Unhandled exception in MQTT handler: {e}", exc_info=True)
-            else:
-                self.logger.error("Unsupported external transport in async bridge.")
+            while self._bridge_thread.is_alive() and self._running:
+                await asyncio.sleep(0.25)
         except asyncio.CancelledError:
             self.logger.info("AsyncBridge received cancellation signal.")
+            raise
         except Exception as e:
-            self.logger.critical(f"Unhandled exception in AsyncBridge: {e}", exc_info=True)
+            self.logger.critical(
+                "Unhandled exception in AsyncBridge: %s", e, exc_info=True
+            )
         finally:
+            if server is not None:
+                server.should_exit = True
+            if api_task is not None:
+                api_task.cancel()
+                try:
+                    await api_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             await self.shutdown()
 
     async def shutdown(self):
-        self.logger.info("Shutting down AsyncBridge and handlers...")
+        self.logger.info("Shutting down AsyncBridge...")
         self._running = False
-        if self.meshcore_handler:
-            await self.meshcore_handler.disconnect()
-        if self.mqtt_handler:
-            await self.mqtt_handler.disconnect()
+        self.bridge.stop()
+        if self._bridge_thread and self._bridge_thread.is_alive():
+            self._bridge_thread.join(timeout=10)
         self.logger.info("AsyncBridge shutdown complete.")
-
-    async def handle_incoming_message(self, event):
-        try:
-            self.logger.info(f"Received message: {event.payload}")
-            # Add additional async message processing here
-        except Exception as e:
-            self.logger.error(f"Error in handle_incoming_message: {e}", exc_info=True)
-
-    def handle_mqtt_message(self, data):
-        try:
-            self.logger.info(f"Received MQTT message: {data}")
-            # Add additional async message processing here if needed
-        except Exception as e:
-            self.logger.error(f"Error in handle_mqtt_message: {e}", exc_info=True)

@@ -1,10 +1,10 @@
 # Akita Meshtastic Meshcore Bridge Deployment Guide
 
 ## Prerequisites
-- Python 3.9+ (recommended: 3.11+)
-- All hardware connected and serial port identified (e.g., COM8)
+- Python 3.10+ (recommended: 3.11 or 3.12)
+- All hardware connected and serial ports identified
 - MQTT broker (if using MQTT transport)
-- (Optional) FastAPI/uvicorn for REST API
+- A dedicated OS user that can access the serial devices (usually `dialout`)
 
 ## Installation
 1. Clone the repository:
@@ -26,27 +26,60 @@
    ```
 
 ## Configuration
-- Copy and edit `examples/config.ini.example` to `config.ini`.
-- Set the correct serial port, baud rate, MQTT, and API settings as needed.
-- Ensure the `SERIAL_PROTOCOL` matches your device (`raw_serial` or `json_newline`).
+- Copy `examples/config.ini.example` to `/etc/ammb/config.ini` (or `config.ini` in the working directory).
+- Set the correct serial port, baud rate, MQTT, and API settings.
+- Ensure `SERIAL_PROTOCOL` matches your device (`companion_radio` for MeshCore USB).
+- For production MQTT, enable TLS (`MQTT_TLS_ENABLED = True`) and set credentials.
+- If the REST API is enabled, set `API_TOKEN` and keep `API_HOST = 127.0.0.1` unless you terminate TLS at a reverse proxy.
 
-## Running the Bridge
+## Production entry point
+Use the headless production runtime:
+
 ```sh
-python run_bridge_async.py
+python run_bridge.py --config /etc/ammb/config.ini
 ```
-- The bridge will log to console by default. Adjust logging in `config.ini` if needed.
+
+The same bridge is also available as:
+
+```sh
+python run_bridge_async.py --config /etc/ammb/config.ini
+```
+
+That wrapper adds an optional in-process FastAPI server. It is not a second protocol implementation.
+
+Before first start:
+
+```sh
+python run_bridge_tui.py --check --config /etc/ammb/config.ini
+```
+
+## systemd
+A unit file lives at `packaging/ammb.service`.
+
+1. Copy the application to `/opt/ammb` and the unit to `/etc/systemd/system/ammb.service`.
+2. Create user `ammb` and add it to `dialout`.
+3. Install the venv and config as referenced in the unit.
+4. Enable and start:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now ammb.service
+sudo systemctl status ammb.service
+```
+
+The unit restarts on failure. Watch logs with `journalctl -u ammb.service -f`.
 
 ## Operational Notes
-- Only one process can access the serial port at a time.
-- To enable the REST API, set `api_enabled = true` in your config and ensure FastAPI/uvicorn are installed.
-- For production, use a process manager (systemd, pm2, etc.) to keep the bridge running.
-- Monitor logs for errors or disconnects.
-- To update, pull the latest code and re-install requirements if needed.
+- Only one process can access a serial port at a time.
+- `MESHTASTIC_RETRY_ON_BOOT = True` keeps the process running if a radio appears after boot.
+- Optional `MESSAGE_LOG_FILE` writes forwarded messages as JSON lines.
+- Monitor `/api/health` when the API is enabled (`Authorization: Bearer <token>` if configured).
+- To update, pull the latest code, reinstall requirements if needed, and restart the service.
 
 ## Troubleshooting
-- **Serial port access denied:** Ensure no other process is using the port. Reboot if needed.
+- **Serial port access denied:** Ensure no other process is using the port and the service user is in `dialout`.
 - **No messages/events:** Check device connection and config. Enable debug logging for more details.
-- **Unhandled exceptions:** Review logs. All async tasks now have robust exception handling and will log errors.
+- **API 401:** An `API_TOKEN` is configured. Send `Authorization: Bearer <token>` or `X-API-Token`.
 
 ## Support
 - See README.md for more details and contact info.

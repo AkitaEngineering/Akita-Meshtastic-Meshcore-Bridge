@@ -1,6 +1,6 @@
 # REST API Documentation
 
-**Last Updated: December 31, 2025**
+**Last Updated: August 17, 2026**
 
 The Akita Meshtastic Meshcore Bridge (AMMB) includes an optional REST API server for monitoring and controlling the bridge. The API is disabled by default and can be enabled by setting `API_ENABLED = True` in `config.ini`.
 
@@ -12,11 +12,13 @@ Configure the API in `config.ini`:
 API_ENABLED = True
 API_HOST = 127.0.0.1
 API_PORT = 8080
+API_TOKEN = change-me
 ```
 
 * **API_ENABLED**: Enable or disable the API server (True/False)
 * **API_HOST**: Host address to bind to (127.0.0.1 for localhost only, 0.0.0.0 for all interfaces)
 * **API_PORT**: Port number for the API server (1-65535)
+* **API_TOKEN**: Optional shared secret. When set, every endpoint requires `Authorization: Bearer <token>` or `X-API-Token`. Required by preflight if the API binds to all interfaces.
 
 ## Base URL
 
@@ -165,7 +167,7 @@ Get basic bridge information.
 ```json
 {
   "name": "Akita Meshtastic Meshcore Bridge",
-  "version": "1.0.0",
+  "version": "2.2.0",
   "external_transport": "serial",
   "meshtastic_connected": true,
   "external_connected": true
@@ -232,7 +234,7 @@ All endpoints may return error responses in the following format:
 
 ## Security Considerations
 
-1. **Access Control**: The API has no built-in authentication. If exposing the API to a network, ensure proper firewall rules are in place.
+1. **Access Control**: Set `API_TOKEN` and send `Authorization: Bearer <token>` or `X-API-Token`. If exposing the API to a network, also put it behind a firewall or reverse proxy.
 
 2. **Host Binding**: By default, the API binds to `127.0.0.1` (localhost only). Only bind to `0.0.0.0` if you have proper network security measures.
 

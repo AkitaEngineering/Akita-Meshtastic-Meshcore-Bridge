@@ -1,6 +1,6 @@
 # Usage Guide
 
-**Last Updated: May 19, 2026**
+**Last Updated: August 17, 2026**
 
 This guide explains how to run and interact with the Akita Meshtastic Meshcore Bridge (AMMB).
 
@@ -33,7 +33,7 @@ Ensure you have completed the steps in the [Installation & Usage](../README.md#i
   python run_bridge_tui.py --print-config
   ```
 
-  **Legacy synchronous runtime:**
+  **Production / headless runtime:**
   ```bash
   python run_bridge.py
   ```
@@ -43,16 +43,16 @@ Ensure you have completed the steps in the [Installation & Usage](../README.md#i
   python run_bridge_tui.py
   ```
 
-  **Async runtime:**
+  **Async wrapper around the production bridge:**
   ```bash
   python run_bridge_async.py
   ```
 
 ### Which Mode Should I Use?
 
-* Use `python run_bridge.py` when you want the original thread-based runtime with plain terminal logs.
+* Use `python run_bridge.py` for unattended production with a process manager.
 * Use `python run_bridge_tui.py` when you want the full-screen dashboard with live metrics, health, controls, and log tail in one terminal window.
-* Use `python run_bridge_async.py` when you want the async runtime for `meshcore_py`, async MQTT, and the async API surface.
+* Use `python run_bridge_async.py` when you want the same production bridge plus an in-process FastAPI server.
 
 Before deploying or troubleshooting, use `python run_bridge_tui.py --check`.
 It validates the config, checks required Python packages, warns about common serial/MQTT/API risks, and exits without opening hardware devices.
@@ -107,7 +107,7 @@ If the command center hits an unhandled startup or runtime exception, the launch
 
 ### Async Runtime
 
-When `python run_bridge_async.py` starts successfully, it initializes the async bridge runtime and logs startup activity for the selected async transport. If `API_ENABLED = True`, it also starts the async API server and logs the server URL.
+When `python run_bridge_async.py` starts successfully, it starts the same production bridge as `run_bridge.py` on a background thread. If `API_ENABLED = True`, it also starts FastAPI in the same process so `/api/*` reflects live health and metrics.
 
 ## Monitoring
 

@@ -13,7 +13,7 @@ class BridgeConfig(NamedTuple):
     """Stores all configuration settings for the bridge."""
 
     # Meshtastic Settings
-    meshtastic_port: str
+    meshtastic_port: Optional[str]
 
     # External Network Interface Settings
     external_transport: Literal["serial", "mqtt"]
@@ -62,6 +62,23 @@ class BridgeConfig(NamedTuple):
     meshtastic_channel_index: Optional[int] = None
     meshcore_channel_index: Optional[int] = None
 
+    # Rate limiting (Optional)
+    rate_limit_max_messages: Optional[int] = 60
+    rate_limit_window_s: Optional[float] = 60.0
+
+    # Message persistence (Optional)
+    message_log_file: Optional[str] = None
+    message_log_max_mb: Optional[int] = 10
+    message_log_max_backups: Optional[int] = 5
+
+    # API authentication (Optional)
+    api_token: Optional[str] = None
+
+    # Meshtastic reconnect (Optional)
+    meshtastic_retry_on_boot: Optional[bool] = True
+    meshtastic_retry_delay_s: Optional[int] = 10
+
+
 CONFIG_FILE = "config.ini"
 
 DEFAULT_CONFIG = {
@@ -95,12 +112,66 @@ DEFAULT_CONFIG = {
     "SERIAL_AUTO_SWITCH": "True",
     "MESHTASTIC_CHANNEL_INDEX": "",
     "MESHCORE_CHANNEL_INDEX": "",
+    "RATE_LIMIT_MAX_MESSAGES": "60",
+    "RATE_LIMIT_WINDOW_S": "60",
+    "MESSAGE_LOG_FILE": "",
+    "MESSAGE_LOG_MAX_MB": "10",
+    "MESSAGE_LOG_MAX_BACKUPS": "5",
+    "API_TOKEN": "",
+    "MESHTASTIC_RETRY_ON_BOOT": "True",
+    "MESHTASTIC_RETRY_DELAY_S": "10",
 }
 
 VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
 VALID_SERIAL_PROTOCOLS = {"json_newline", "raw_serial", "companion_radio"}
 VALID_TRANSPORTS = {"serial", "mqtt"}
 VALID_MQTT_QOS = {0, 1, 2}
+
+
+def resolve_config_path(
+    explicit: Optional[str] = None,
+    fallback: Optional[str] = None,
+) -> str:
+    """Resolve the config file path for CLI and service entry points."""
+    if explicit:
+        return os.path.abspath(explicit)
+    env_path = os.environ.get("AMMB_CONFIG")
+    if env_path:
+        return os.path.abspath(env_path)
+    cwd_config = os.path.join(os.getcwd(), CONFIG_FILE)
+    if os.path.exists(cwd_config):
+        return os.path.abspath(cwd_config)
+    if fallback:
+        return os.path.abspath(fallback)
+    return os.path.abspath(CONFIG_FILE)
+
+
+def _positive_int(
+    section: configparser.SectionProxy,
+    key: str,
+    default: int,
+) -> int:
+    try:
+        value = section.getint(key, fallback=default)
+        if value is None or value <= 0:
+            return default
+        return value
+    except ValueError:
+        return default
+
+
+def _positive_float(
+    section: configparser.SectionProxy,
+    key: str,
+    default: float,
+) -> float:
+    try:
+        value = section.getfloat(key, fallback=default)
+        if value is None or value <= 0:
+            return default
+        return value
+    except ValueError:
+        return default
 
 
 def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
@@ -124,7 +195,7 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         logger.info("Reading configuration from: %s", config_path)
         config.read(config_path)
 
-        cfg_section = config["DEFAULT"] if "DEFAULT" in config else DEFAULT_CONFIG
+        cfg_section = config["DEFAULT"]
 
         # Only set meshtastic_port if explicitly present and not commented out
         if "MESHTASTIC_SERIAL_PORT" in cfg_section:
@@ -305,7 +376,9 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             meshtastic_channel_index = cfg_section.getint(
                 "MESHTASTIC_CHANNEL_INDEX", fallback=None
             )
-            if meshtastic_channel_index is not None and not (0 <=  meshtastic_channel_index <= 7):
+            if meshtastic_channel_index is not None and not (
+                0 <= meshtastic_channel_index <= 7
+            ):
                 meshtastic_channel_index = None
         except ValueError:
             meshtastic_channel_index = None
@@ -313,13 +386,44 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             meshcore_channel_index = cfg_section.getint(
                 "MESHCORE_CHANNEL_INDEX", fallback=None
             )
-            if meshcore_channel_index is not None and not (0 <= meshcore_channel_index <= 7):
+            if meshcore_channel_index is not None and not (
+                0 <= meshcore_channel_index <= 7
+            ):
                 meshcore_channel_index = None
         except ValueError:
             meshcore_channel_index = None
 
-        if (meshtastic_channel_index is None) != (meshcore_channel_index is None):
-            logger.warning("Both MESHTASTIC_CHANNEL_INDEX and MESHCORE_CHANNEL_INDEX must be set. Disabling channel filtering.")
+        if (meshtastic_channel_index is None) != (
+            meshcore_channel_index is None
+        ):
+            logger.warning(
+                "Both MESHTASTIC_CHANNEL_INDEX and "
+                "MESHCORE_CHANNEL_INDEX must be set. "
+                "Disabling channel filtering."
+            )
+
+        rate_limit_max_messages = _positive_int(
+            cfg_section, "RATE_LIMIT_MAX_MESSAGES", 60
+        )
+        rate_limit_window_s = _positive_float(
+            cfg_section, "RATE_LIMIT_WINDOW_S", 60.0
+        )
+        message_log_file = (
+            cfg_section.get("MESSAGE_LOG_FILE", fallback="").strip() or None
+        )
+        message_log_max_mb = _positive_int(
+            cfg_section, "MESSAGE_LOG_MAX_MB", 10
+        )
+        message_log_max_backups = _positive_int(
+            cfg_section, "MESSAGE_LOG_MAX_BACKUPS", 5
+        )
+        api_token = cfg_section.get("API_TOKEN", fallback="").strip() or None
+        meshtastic_retry_on_boot = cfg_section.getboolean(
+            "MESHTASTIC_RETRY_ON_BOOT", fallback=True
+        )
+        meshtastic_retry_delay_s = _positive_int(
+            cfg_section, "MESHTASTIC_RETRY_DELAY_S", 10
+        )
 
         bridge_config = BridgeConfig(
             meshtastic_port=meshtastic_port,
@@ -354,6 +458,14 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             serial_auto_switch=serial_auto_switch,
             meshtastic_channel_index=meshtastic_channel_index,
             meshcore_channel_index=meshcore_channel_index,
+            rate_limit_max_messages=rate_limit_max_messages,
+            rate_limit_window_s=rate_limit_window_s,
+            message_log_file=message_log_file,
+            message_log_max_mb=message_log_max_mb,
+            message_log_max_backups=message_log_max_backups,
+            api_token=api_token,
+            meshtastic_retry_on_boot=meshtastic_retry_on_boot,
+            meshtastic_retry_delay_s=meshtastic_retry_delay_s,
         )
         logger.debug("Configuration loaded: %s", bridge_config)
         return bridge_config

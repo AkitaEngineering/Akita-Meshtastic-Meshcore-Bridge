@@ -7,13 +7,14 @@ import logging
 import threading
 import time
 from queue import Queue
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from .api import BridgeAPIServer
 from .config_handler import BridgeConfig
 from .health import HealthStatus, get_health_monitor
 from .meshcore_handler import MeshcoreHandler
 from .meshtastic_handler import MeshtasticHandler
+from .message_logger import configure_message_logger, get_message_logger
 from .metrics import get_metrics
 from .mqtt_handler import MQTTHandler
 
@@ -28,13 +29,14 @@ class Bridge:
     to_external_queue: Queue
     meshtastic_handler: Optional[MeshtasticHandler]
     external_handler: Optional[ExternalHandler]
-    handlers: list[object]
+    handlers: list[Any]
     api_server: Optional[BridgeAPIServer]
 
     def __init__(self, config: BridgeConfig):
         self.logger = logging.getLogger(__name__)
         self.config = config
         self.shutdown_event = threading.Event()
+        self._stopped = False
 
         self.to_meshtastic_queue = Queue(maxsize=config.queue_size)
         self.to_external_queue = Queue(maxsize=config.queue_size)
@@ -43,9 +45,14 @@ class Bridge:
             config.queue_size,
         )
 
-        # Initialize metrics and health monitoring
+        # Initialize metrics, health, and optional message persistence
         self.metrics = get_metrics()
         self.health_monitor = get_health_monitor()
+        self.message_logger = configure_message_logger(
+            log_file=config.message_log_file,
+            max_file_size_mb=int(config.message_log_max_mb or 10),
+            max_backups=int(config.message_log_max_backups or 5),
+        )
         self.health_monitor.register_component(
             "meshtastic", HealthStatus.UNKNOWN
         )
@@ -132,12 +139,18 @@ class Bridge:
         self.logger.info("Attempting initial network connections...")
         if self.meshtastic_handler:
             if not self.meshtastic_handler.connect():
-                self.logger.critical(
-                    "Failed to connect to Meshtastic device on startup. "
-                    "Bridge cannot start."
-                )
-                self.stop()
-                return
+                if self.config.meshtastic_retry_on_boot:
+                    self.logger.warning(
+                        "Failed to connect to Meshtastic on startup. "
+                        "Sender thread will keep retrying."
+                    )
+                else:
+                    self.logger.critical(
+                        "Failed to connect to Meshtastic device on "
+                        "startup. Bridge cannot start."
+                    )
+                    self.stop()
+                    return
 
         if not self.external_handler.connect():
             handler_type = type(self.external_handler).__name__
@@ -150,9 +163,9 @@ class Bridge:
         try:
             if self.meshtastic_handler:
                 self.meshtastic_handler.start_sender()
-            if isinstance(self.external_handler, MeshcoreHandler):
+            if hasattr(self.external_handler, "start_threads"):
                 self.external_handler.start_threads()
-            elif isinstance(self.external_handler, MQTTHandler):
+            elif hasattr(self.external_handler, "start_publisher"):
                 self.external_handler.start_publisher()
 
         except Exception as e:
@@ -188,8 +201,9 @@ class Bridge:
             self.stop()
 
     def stop(self):
-        if self.shutdown_event.is_set():
+        if self._stopped:
             return
+        self._stopped = True
 
         self.logger.info("Signaling shutdown to all components...")
         self.shutdown_event.set()
@@ -200,8 +214,9 @@ class Bridge:
 
         # Stop health monitoring
         self.health_monitor.stop_monitoring()
+        get_message_logger().stop()
 
-        self.logger.info(f"Stopping {len(self.handlers)} handlers...")
+        self.logger.info("Stopping %s handlers...", len(self.handlers))
         for handler in reversed(self.handlers):
             try:
                 handler.stop()

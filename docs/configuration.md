@@ -1,6 +1,6 @@
 # Configuration Guide
 
-**Last Updated: May 19, 2026**
+**Last Updated: August 17, 2026**
 
 The Akita Meshtastic Meshcore Bridge (AMMB) uses a configuration file named `config.ini` located in the project's root directory. Copy `examples/config.ini.example` to `config.ini` and modify it according to your setup.
 
@@ -182,6 +182,53 @@ These settings are only used when `EXTERNAL_TRANSPORT = mqtt`.
     * **Required:** No
     * **Default:** `8080`
 
+* **`API_TOKEN`**
+    * **Description:** Shared secret for the REST API. When set, all endpoints require `Authorization: Bearer <token>` or `X-API-Token`.
+    * **Required:** Yes when `API_HOST` is `0.0.0.0` or `::`
+    * **Default:** (empty)
+
+### Rate Limiting
+
+* **`RATE_LIMIT_MAX_MESSAGES`**
+    * **Description:** Maximum forwarded messages allowed per window for each handler.
+    * **Required:** No
+    * **Default:** `60`
+
+* **`RATE_LIMIT_WINDOW_S`**
+    * **Description:** Rate-limit window in seconds.
+    * **Required:** No
+    * **Default:** `60`
+
+### Message Persistence
+
+* **`MESSAGE_LOG_FILE`**
+    * **Description:** Path to a JSONL file that records forwarded messages. Leave blank to disable.
+    * **Required:** No
+    * **Default:** (empty)
+
+* **`MESSAGE_LOG_MAX_MB`**
+    * **Description:** Rotate the message log after this many megabytes.
+    * **Required:** No
+    * **Default:** `10`
+
+* **`MESSAGE_LOG_MAX_BACKUPS`**
+    * **Description:** Number of rotated message-log backups to keep.
+    * **Required:** No
+    * **Default:** `5`
+
+### Meshtastic Reconnect
+
+* **`MESHTASTIC_RETRY_ON_BOOT`**
+    * **Description:** Keep the bridge running and retry if the Meshtastic radio is missing at startup.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `True`
+
+* **`MESHTASTIC_RETRY_DELAY_S`**
+    * **Description:** Seconds to wait between Meshtastic reconnect attempts.
+    * **Required:** No
+    * **Default:** `10`
+
 ### Bridge Settings
 
 * **`EXTERNAL_NETWORK_ID`**
@@ -269,7 +316,7 @@ For different environments (development, production), you can:
 
 - **MQTT Passwords**: Store securely, consider using environment variables for sensitive data
 - **TLS Certificates**: Use proper certificate paths and avoid insecure mode in production
-- **API Access**: Restrict API host to localhost (127.0.0.1) unless firewall protection is in place
+- **API Access**: Restrict API host to localhost (127.0.0.1), set `API_TOKEN`, and use a reverse proxy if remote access is required
 - **Serial Ports**: Ensure proper permissions are set on serial devices
 
 ## Troubleshooting Configuration

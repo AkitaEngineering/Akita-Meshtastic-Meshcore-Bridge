@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-**Last Updated: May 19, 2026**
+**Last Updated: August 17, 2026**
 
 This document describes the architecture and design of the Akita Meshtastic Meshcore Bridge (AMMB).
 
@@ -10,9 +10,9 @@ AMMB is a bidirectional bridge that connects Meshtastic LoRa mesh networks with 
 
 The project currently exposes three operator-facing runtime modes:
 
-* `run_bridge.py`: legacy synchronous runtime with plain terminal logging
-* `run_bridge_async.py`: async runtime for `meshcore_py`, async MQTT, and the async API surface
-* `run_bridge_tui.py`: full-screen Textual command center that wraps the synchronous bridge and surfaces live status, metrics, health, and logs
+* `run_bridge.py`: production headless runtime with plain terminal logging
+* `run_bridge_async.py`: same production `Bridge`, plus an optional in-process FastAPI server
+* `run_bridge_tui.py`: full-screen Textual command center that wraps the production bridge and surfaces live status, metrics, health, and logs
 
 ## Runtime Modes
 
@@ -22,7 +22,7 @@ The synchronous runtime is built around `ammb/bridge.py`. It uses thread-based h
 
 ### Async Runtime
 
-The async runtime is built around `ammb/bridge_async.py`. It uses async handlers for MeshCore and MQTT, runs on an asyncio event loop, and can launch the async FastAPI server when enabled.
+The async runtime is built around `ammb/bridge_async.py`. It starts the production `Bridge` on a background thread and can serve FastAPI in the same process so health and metrics match the live bridge.
 
 ### Terminal Command Center
 
@@ -34,7 +34,7 @@ The command center is implemented in `ammb/tui.py`. It launches the synchronous 
 
 1. **Bridge Orchestrators** (`ammb/bridge.py`, `ammb/bridge_async.py`)
    - `Bridge` manages the synchronous thread-based runtime
-   - `AsyncBridge` manages the asyncio-based runtime
+   - `AsyncBridge` wraps that same `Bridge` under asyncio
    - Both coordinate handlers, startup, shutdown, and runtime state
 
 2. **Terminal Command Center** (`ammb/tui.py`)
@@ -102,10 +102,10 @@ The command center is implemented in `ammb/tui.py`. It launches the synchronous 
     - Configurable limits
 
 12. **Message Logger** (`ammb/message_logger.py`)
-    - Optional message persistence to file
+    - Optional message persistence to file when `MESSAGE_LOG_FILE` is set
     - JSON line format
     - Automatic log rotation
-    - Background worker thread
+    - Background worker thread used by the serial, MQTT, and Meshtastic handlers
 
 ## Message Flow
 
@@ -155,7 +155,7 @@ The command center keeps the Textual app on the main thread and launches the syn
 
 ### Async Runtime
 
-The async runtime uses an asyncio event loop instead of the thread-based handler model. When the async API is enabled, `run_bridge_async.py` launches the FastAPI server in a separate process while the bridge runtime continues on the main event loop.
+The async runtime uses an asyncio event loop to supervise the production thread-based bridge. When the async API is enabled, FastAPI runs in the same process as the bridge.
 
 ## Message Queues
 
@@ -198,6 +198,7 @@ Health status is updated automatically when connections change.
 3. **Rate Limiting**: Prevents message flooding attacks
 4. **Node ID Validation**: Prevents message spoofing
 5. **TLS/SSL Support**: Secure MQTT connections with certificate validation
+6. **API token**: Optional shared secret required on all REST endpoints when configured
 
 ## Performance Considerations
 

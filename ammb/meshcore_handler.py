@@ -16,9 +16,9 @@ from .config_handler import BridgeConfig
 from .health import HealthStatus, get_health_monitor
 from .metrics import get_metrics
 from .protocol import MeshcoreProtocolHandler, get_serial_protocol_handler
-from .rate_limiter import RateLimiter
+from .message_logger import get_message_logger
+from .rate_limiter import limiter_from_config
 from .validator import MessageValidator
-
 
 
 class MeshcoreHandler:
@@ -90,7 +90,7 @@ class MeshcoreHandler:
         self.metrics = get_metrics()
         self.health_monitor = get_health_monitor()
         self.validator = MessageValidator()
-        self.rate_limiter = RateLimiter(max_messages=60, time_window=60.0)
+        self.rate_limiter = limiter_from_config(config)
 
         if (
             not config.serial_port
@@ -600,6 +600,10 @@ class MeshcoreHandler:
                                 self.to_meshtastic_queue.put_nowait(
                                     meshtastic_msg
                                 )
+                                get_message_logger().log_message(
+                                    meshtastic_msg,
+                                    "external_to_meshtastic",
+                                )
                                 payload_size = (
                                     len(text_payload_str.encode("utf-8"))
                                     if text_payload_str
@@ -701,6 +705,9 @@ class MeshcoreHandler:
                                 send_success = True
                                 self.metrics.record_external_sent(
                                     len(encoded_message)
+                                )
+                                get_message_logger().log_message(
+                                    item, "meshtastic_to_external"
                                 )
                             except serial.SerialException as e:
                                 self.logger.error(

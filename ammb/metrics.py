@@ -23,7 +23,7 @@ class MessageStats:
     last_sent: Optional[datetime] = None
     bytes_received: int = 0
     bytes_sent: int = 0
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.RLock = field(default_factory=threading.RLock)
 
     def increment_received(self, bytes_count: int = 0):
         """Increment received message counter."""
@@ -80,7 +80,7 @@ class ConnectionStats:
     last_disconnected: Optional[datetime] = None
     total_uptime_seconds: float = 0.0
     current_uptime_start: Optional[datetime] = None
-    _lock: threading.Lock = field(default_factory=threading.Lock)
+    _lock: threading.RLock = field(default_factory=threading.RLock)
 
     def record_connection(self):
         """Record a connection event."""
@@ -139,7 +139,7 @@ class MetricsCollector:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.start_time = datetime.now()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         # Per-handler statistics
         self.meshtastic_stats = MessageStats()

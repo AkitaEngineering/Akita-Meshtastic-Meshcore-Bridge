@@ -453,6 +453,19 @@ def build_config_rows(config: BridgeConfig) -> list[tuple[str, str]]:
         ("Queue Size", str(config.queue_size)),
         ("Log Level", config.log_level.upper()),
         ("API", _api_label(config)),
+        (
+            "API Token",
+            "configured (hidden)" if config.api_token else "not set",
+        ),
+        (
+            "Rate Limit",
+            "%s / %ss"
+            % (
+                config.rate_limit_max_messages or 60,
+                config.rate_limit_window_s or 60,
+            ),
+        ),
+        ("Message Log", config.message_log_file or "disabled"),
     ]
 
     if config.external_transport == "serial":

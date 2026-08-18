@@ -594,6 +594,7 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
         self.logger.debug("Ignoring companion frame code: 0x%02x", code)
         return None
 
+
 _serial_protocol_handlers = {
     "json_newline": JsonNewlineProtocol,
     "raw_serial": RawSerialProtocol,

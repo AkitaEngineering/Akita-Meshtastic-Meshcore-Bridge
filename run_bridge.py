@@ -12,6 +12,7 @@ This script handles:
 - Handling graceful shutdown on KeyboardInterrupt (Ctrl+C).
 """
 
+import argparse
 import logging
 import os
 import sys
@@ -45,7 +46,7 @@ except ImportError as e:
 # --- Imports ---
 try:
     from ammb import Bridge
-    from ammb.config_handler import CONFIG_FILE, load_config
+    from ammb.config_handler import load_config, resolve_config_path
     from ammb.utils import setup_logging
 except ImportError as e:
     print(f"ERROR: Failed to import AMMB modules: {e}", file=sys.stderr)
@@ -57,7 +58,20 @@ except ImportError as e:
 
 
 # --- Main Execution ---
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Run the AMMB production bridge."
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help=(
+            "Path to config.ini. Defaults to AMMB_CONFIG, ./config.ini, "
+            "then the project-root config.ini."
+        ),
+    )
+    args = parser.parse_args(argv)
+
     # Basic logging setup until config is loaded
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -65,14 +79,16 @@ def main():
     logging.info("--- Akita Meshtastic Meshcore Bridge Starting ---")
 
     # --- Configuration Loading ---
-    config_path = os.path.join(project_root, CONFIG_FILE)
-    logging.info(f"Loading configuration from: {config_path}")
+    config_path = resolve_config_path(
+        args.config, fallback=os.path.join(project_root, "config.ini")
+    )
+    logging.info("Loading configuration from: %s", config_path)
     config = load_config(config_path)
     if not config:
         logging.critical("Failed to load configuration. Bridge cannot start.")
         sys.exit(1)
     logging.info("Configuration loaded successfully.")
-    logging.info(f"Selected external transport: {config.external_transport}")
+    logging.info("Selected external transport: %s", config.external_transport)
 
     # --- Logging Setup ---
     setup_logging(config.log_level)
@@ -98,7 +114,8 @@ def main():
         )
     except Exception as e:
         logging.critical(
-            f"Unhandled critical exception in bridge execution: {e}",
+            "Unhandled critical exception in bridge execution: %s",
+            e,
             exc_info=True,
         )
         logging.info("Attempting emergency shutdown...")
@@ -107,6 +124,7 @@ def main():
 
     logging.info("--- Akita Meshtastic Meshcore Bridge Stopped ---")
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

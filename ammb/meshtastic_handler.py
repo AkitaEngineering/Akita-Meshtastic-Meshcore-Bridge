@@ -17,7 +17,8 @@ from pubsub import pub
 from .config_handler import BridgeConfig
 from .health import HealthStatus, get_health_monitor
 from .metrics import get_metrics
-from .rate_limiter import RateLimiter
+from .message_logger import get_message_logger
+from .rate_limiter import limiter_from_config
 from .validator import MessageValidator
 
 
@@ -51,9 +52,8 @@ class MeshtasticHandler:
         self.metrics = get_metrics()
         self.health_monitor = get_health_monitor()
         self.validator = MessageValidator()
-        self.rate_limiter = RateLimiter(
-            max_messages=60, time_window=60.0
-        )  # 60 messages per minute
+        self.rate_limiter = limiter_from_config(config)
+        self._receive_subscribed = False
 
     def connect(self) -> bool:
         with self._lock:
@@ -113,12 +113,16 @@ class MeshtasticHandler:
                         "unavailable",
                     )
 
-                pub.subscribe(
-                    self._on_meshtastic_receive,
-                    "meshtastic.receive",
-                    weak=False,
-                )
-                self.logger.info("Meshtastic receive callback registered.")
+                if not self._receive_subscribed:
+                    pub.subscribe(
+                        self._on_meshtastic_receive,
+                        "meshtastic.receive",
+                        weak=False,
+                    )
+                    self._receive_subscribed = True
+                    self.logger.info(
+                        "Meshtastic receive callback registered."
+                    )
                 return True
 
             except Exception as e:
@@ -184,6 +188,12 @@ class MeshtasticHandler:
             self.sender_thread.join(timeout=5)
 
         self.logger.info("Meshtastic handler stopped.")
+
+    def _reconnect_delay(self) -> float:
+        delay = getattr(self.config, "meshtastic_retry_delay_s", None)
+        if delay:
+            return float(delay)
+        return float(self.RECONNECT_DELAY_S)
 
     def _resolve_sender_display_name(
         self,
@@ -300,6 +310,9 @@ class MeshtasticHandler:
 
                 try:
                     self.to_external_queue.put_nowait(external_message)
+                    get_message_logger().log_message(
+                        external_message, "meshtastic_to_external"
+                    )
                     payload_size = (
                         len(str(translated_payload).encode("utf-8"))
                         if translated_payload
@@ -334,16 +347,19 @@ class MeshtasticHandler:
     def _meshtastic_sender_loop(self):
         self.logger.info("Meshtastic sender loop started.")
         while not self.shutdown_event.is_set():
+            if not self._is_connected.is_set():
+                self.logger.warning(
+                    "Meshtastic disconnected. Attempting reconnect..."
+                )
+                if not self.connect():
+                    self.shutdown_event.wait(self._reconnect_delay())
+                    continue
+
             try:
                 item: Optional[Dict[str, Any]] = self.to_meshtastic_queue.get(
                     timeout=1
                 )
                 if not item:
-                    continue
-
-                if not self._is_connected.is_set():
-                    self.to_meshtastic_queue.task_done()
-                    time.sleep(self.RECONNECT_DELAY_S / 2)
                     continue
 
                 # Validate and sanitize message
@@ -414,6 +430,9 @@ class MeshtasticHandler:
                                 self.metrics.record_meshtastic_sent(
                                     payload_size
                                 )
+                                get_message_logger().log_message(
+                                    item, "external_to_meshtastic"
+                                )
                                 self.health_monitor.update_component(
                                     "meshtastic",
                                     HealthStatus.HEALTHY,
@@ -434,15 +453,14 @@ class MeshtasticHandler:
                     self.to_meshtastic_queue.task_done()
 
             except Empty:
-                if not self._is_connected.is_set():
-                    time.sleep(self.RECONNECT_DELAY_S)
                 continue
             except Exception as e:
                 self.logger.error(
-                    f"Critical error in meshtastic_sender_loop: {e}",
+                    "Critical error in meshtastic_sender_loop: %s",
+                    e,
                     exc_info=True,
                 )
                 self._is_connected.clear()
-                time.sleep(5)
+                self.shutdown_event.wait(self._reconnect_delay())
 
         self.logger.info("Meshtastic sender loop stopped.")

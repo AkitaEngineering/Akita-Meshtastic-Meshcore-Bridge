@@ -1,14 +1,14 @@
 # Development Guide
 
-**Last Updated: May 18, 2026**
+**Last Updated: August 17, 2026**
 
 This guide provides instructions for setting up a development environment, running tests, and contributing to the Akita Meshtastic Meshcore Bridge (AMMB) project.
 
 ## Setting Up Development Environment
 
-Use Python 3.10 or newer for development and test runs. The dev toolchain now
-requires `pytest` 9.0.3+ to address CVE-2025-71176, and upstream only ships
-that fix for Python 3.10+.
+Use Python 3.10 or newer for development and test runs. Runtime support is
+Python 3.10+; CI runs 3.10, 3.11, and 3.12. The dev toolchain requires
+`pytest` 9.0.3+ to address CVE-2025-71176.
 
 1. **Clone the repository:**
    ```bash
@@ -144,7 +144,7 @@ We use `flake8` for checking code style against PEP 8 guidelines and common erro
 
 ### Project linting policy ✅
 
-- **Max line length:** 79 characters (flake8 E501). When long lines are found, prefer **targeted wrapping or splitting** (for example: split long strings, break complex expressions, or use short helper variables) rather than increasing the line length limit.
+- **Max line length:** 120 characters in CI (flake8 E501). Prefer wrapping new code closer to 79 when it stays readable.
 - **Third-party packages:** Do **not** edit files under `.venv` or other external package directories to satisfy linter rules. Instead, exclude those directories from lint runs (we include `.venv` in the project's `.flake8` file).
 - **Logging:** Prefer parameterized logging calls (e.g., `logger.info("Connected to %s", port)`) instead of long f-strings to keep messages shorter and avoid unnecessary formatting overhead.
 - **Fix process:** When addressing E501 issues in project files, make conservative, behavior-preserving edits (wrap strings, reflow docstrings, or adjust logging). Re-run tests and `mypy` after each change to ensure no regressions.
@@ -444,7 +444,7 @@ curl http://localhost:8080/api/health
 
 When preparing a release:
 
-1. Update version in `ammb/__init__.py`
+1. Update version in `ammb/version.py` and `pyproject.toml`
 2. Update `CHANGELOG.md` with release notes
 3. Update documentation dates
 4. Run full test suite

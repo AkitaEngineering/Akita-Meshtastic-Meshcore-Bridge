@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akita-mesh-bridge"
-version = "2.1.1"
+version = "2.2.0"
 description = "Bridge between Meshtastic and MeshCore networks"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dynamic = ["dependencies"]
 
 [tool.setuptools.dynamic]
@@ -25,3 +25,13 @@ py-modules = [
 run-bridge = "run_bridge:main"
 run-bridge-async = "run_bridge_async:main"
 run-bridge-tui = "run_bridge_tui:main"
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = false
+follow_imports = "skip"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -97,6 +97,23 @@ def build_config_summary(config: BridgeConfig) -> list[tuple[str, str]]:
         ("Queue size", str(config.queue_size)),
         ("Log level", config.log_level),
         ("API", _api_value(config)),
+        ("API token", _secret_value(config.api_token)),
+        (
+            "Rate limit",
+            "%s / %ss"
+            % (
+                config.rate_limit_max_messages or 60,
+                config.rate_limit_window_s or 60,
+            ),
+        ),
+        (
+            "Message log",
+            config.message_log_file or "disabled",
+        ),
+        (
+            "Meshtastic retry on boot",
+            _bool_value(config.meshtastic_retry_on_boot),
+        ),
     ]
 
     if config.external_transport == "serial":
@@ -279,12 +296,24 @@ def _config_diagnostics(config: BridgeConfig) -> list[Diagnostic]:
             )
         )
 
+    if config.api_enabled and not config.api_token:
+        exposed = config.api_host in {"0.0.0.0", "::"}
+        diagnostics.append(
+            Diagnostic(
+                "error" if exposed else "warning",
+                "API token is not set",
+                "API_ENABLED is true but API_TOKEN is empty.",
+                "Set API_TOKEN before exposing the control API.",
+            )
+        )
+
     if config.api_enabled and config.api_host in {"0.0.0.0", "::"}:
         diagnostics.append(
             Diagnostic(
                 "warning",
                 "API listens on all interfaces",
-                f"The REST API is exposed on {config.api_host}:{config.api_port}.",
+                "The REST API is exposed on %s:%s."
+                % (config.api_host, config.api_port),
                 "Bind to 127.0.0.1 unless remote monitoring is intentional.",
             )
         )
@@ -391,6 +420,10 @@ def _api_value(config: BridgeConfig) -> str:
 
 def _bool_value(value: bool | None) -> str:
     return "enabled" if value else "disabled"
+
+
+def _secret_value(value: str | None) -> str:
+    return "configured (hidden)" if value else "not set"
 
 
 def _channel_value(value: int | None) -> str:

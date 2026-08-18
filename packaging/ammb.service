@@ -1,0 +1,24 @@
+[Unit]
+Description=Akita Meshtastic Meshcore Bridge
+Documentation=https://github.com/AkitaEngineering/Akita-Meshtastic-Meshcore-Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ammb
+Group=dialout
+WorkingDirectory=/opt/ammb
+Environment=AMMB_CONFIG=/etc/ammb/config.ini
+ExecStart=/opt/ammb/.venv/bin/python /opt/ammb/run_bridge.py --config /etc/ammb/config.ini
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Serial devices need to remain visible to the service.
+SupplementaryGroups=dialout
+
+[Install]
+WantedBy=multi-user.target

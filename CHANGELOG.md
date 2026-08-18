@@ -1,6 +1,24 @@
 # Changelog - Major Enhancements
 
-**Last Updated: January 22, 2026**
+**Last Updated: August 17, 2026**
+
+## Version 2.2.0 - Production Hardening (August 17, 2026)
+
+### Fixes
+- **Async runtime now forwards traffic.** `run_bridge_async.py` runs the same production `Bridge` as the sync entry point instead of only logging inbound events.
+- **Async API shares process state.** FastAPI now starts in-process so health and metrics match the running bridge.
+- **Meshtastic retry on boot.** A missing radio no longer aborts startup by default; the sender thread reconnects until the device appears.
+- **Message persistence is wired.** `MESSAGE_LOG_FILE` now records forwarded messages in JSONL form.
+- **Rate limits are configurable.** `RATE_LIMIT_MAX_MESSAGES` and `RATE_LIMIT_WINDOW_S` feed every handler.
+- **API authentication.** Optional `API_TOKEN` is required on all API endpoints when set. Preflight errors if the API is bound to all interfaces without a token.
+- **Canonical version.** Package, API `/api/info`, and `ammb.__version__` all report `2.2.0`.
+- **CI enforces project quality gates.** flake8 and mypy now fail the build; tests run on Python 3.10-3.12.
+- **Fixed `/api/metrics` deadlock.** `ConnectionStats.to_dict()` re-entered a non-reentrant lock, so metrics and status endpoints could hang forever.
+
+### Packaging
+- Added `packaging/ammb.service` for systemd deployments.
+- `run_bridge.py` and `run_bridge_async.py` accept `--config` and `AMMB_CONFIG`.
+- Removed scratch `tmp_*` files from the repository.
 
 ## Unreleased
 
