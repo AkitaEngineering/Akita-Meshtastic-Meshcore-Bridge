@@ -4,7 +4,9 @@ from queue import Queue
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ammb.api import BridgeAPIServer, extract_request_token, token_matches
@@ -76,6 +78,17 @@ def test_sync_api_info_uses_package_version():
         server.stop()
 
 
+def test_sync_api_startup_failure_is_fatal():
+    bridge = _FakeBridge(make_bridge_config(api_enabled=True))
+    server = BridgeAPIServer(bridge, host="127.0.0.1", port=8080)
+
+    with patch(
+        "ammb.api.ThreadingHTTPServer",
+        side_effect=OSError("address unavailable"),
+    ), pytest.raises(RuntimeError, match="configured API server"):
+        server.start()
+
+
 def test_sync_api_requires_token_when_configured():
     config = make_bridge_config(
         api_enabled=True,
@@ -127,6 +140,24 @@ def test_sync_api_reset_metrics():
         server.stop()
 
 
+def test_sync_api_rejects_oversized_control_body():
+    config = make_bridge_config(api_enabled=True, api_port=0)
+    server = BridgeAPIServer(_FakeBridge(config), host="127.0.0.1", port=0)
+    server.start()
+    try:
+        status, data = _request(
+            "127.0.0.1",
+            server.port,
+            "POST",
+            "/api/control",
+            body={"payload": "x" * (64 * 1024)},
+        )
+        assert status == 413
+        assert data["error"] == "Request body too large"
+    finally:
+        server.stop()
+
+
 def test_metrics_get_all_stats_does_not_deadlock():
     get_metrics().record_meshtastic_connection()
     stats = get_metrics().get_all_stats()
@@ -147,3 +178,22 @@ def test_async_api_requires_token_and_reports_version():
     assert allowed.status_code == 200
     assert allowed.json()["version"] == __version__
     reset_async_api()
+
+
+def test_async_api_rejects_invalid_and_oversized_control_bodies():
+    reset_async_api()
+    client = TestClient(app)
+
+    invalid = client.post(
+        "/api/control",
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+    )
+    assert invalid.status_code == 400
+
+    oversized = client.post(
+        "/api/control",
+        content=b"x" * (64 * 1024 + 1),
+        headers={"Content-Type": "application/json"},
+    )
+    assert oversized.status_code == 413

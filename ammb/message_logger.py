@@ -5,6 +5,7 @@ Message persistence and logging for the bridge.
 
 import json
 import logging
+import os
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -76,6 +77,8 @@ class MessageLogger:
             assert self.log_file is not None
             self._log_path = Path(self.log_file)
             self._log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._log_path.touch(mode=0o600, exist_ok=True)
+            os.chmod(self._log_path, 0o600)
             self._start_worker()
 
     @property

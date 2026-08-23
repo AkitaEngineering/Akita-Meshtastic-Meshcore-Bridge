@@ -2,12 +2,17 @@
 """
 Async REST API for monitoring and controlling the bridge using FastAPI.
 """
+import json
 from typing import Optional
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
-from ammb.api import extract_request_token, token_matches
+from ammb.api import (
+    MAX_CONTROL_BODY_BYTES,
+    extract_request_token,
+    token_matches,
+)
 from ammb.health import get_health_monitor
 from ammb.metrics import get_metrics
 from ammb.version import __version__
@@ -122,7 +127,37 @@ async def control(
 ):
     if not _authorized(authorization, x_api_token):
         return _unauthorized()
-    data = await request.json()
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_CONTROL_BODY_BYTES:
+                return JSONResponse(
+                    content={"error": "Request body too large"},
+                    status_code=413,
+                )
+        except ValueError:
+            return JSONResponse(
+                content={"error": "Invalid Content-Length"},
+                status_code=400,
+            )
+    body = await request.body()
+    if len(body) > MAX_CONTROL_BODY_BYTES:
+        return JSONResponse(
+            content={"error": "Request body too large"},
+            status_code=413,
+        )
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JSONResponse(
+            content={"error": "Invalid JSON"},
+            status_code=400,
+        )
+    if not isinstance(data, dict):
+        return JSONResponse(
+            content={"error": "JSON object required"},
+            status_code=400,
+        )
     action = data.get("action")
     if action == "reset_metrics":
         get_metrics().reset()

@@ -16,6 +16,15 @@ RestartSec=5
 TimeoutStopSec=20
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077
 
 # Serial devices need to remain visible to the service.
 SupplementaryGroups=dialout

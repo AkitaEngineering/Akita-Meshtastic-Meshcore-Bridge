@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import logging
 import os
+import signal
 import sys
 
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +18,8 @@ sys.path.insert(0, project_root)
 
 try:
     from ammb.bridge_async import AsyncBridge
-    from ammb.config_handler import load_config, resolve_config_path
+    from ammb.config_handler import resolve_config_path
+    from ammb.preflight import run_preflight
     from ammb.utils import setup_logging
 except ImportError as e:
     print(f"ERROR: Failed to import AMMB modules: {e}", file=sys.stderr)
@@ -48,10 +50,25 @@ def main(argv=None):
         args.config, fallback=os.path.join(project_root, "config.ini")
     )
     logging.info("Loading configuration from: %s", config_path)
-    config = load_config(config_path)
-    if not config:
+    report = run_preflight(config_path)
+    config = report.config
+    if not report.ready or config is None:
+        for diagnostic in report.diagnostics:
+            log = (
+                logging.error
+                if diagnostic.is_error
+                else logging.warning
+            )
+            log("Preflight %s: %s", diagnostic.title, diagnostic.detail)
         logging.critical("Failed to load configuration. Bridge cannot start.")
         sys.exit(1)
+    for diagnostic in report.diagnostics:
+        if diagnostic.severity.lower() == "warning":
+            logging.warning(
+                "Preflight warning: %s: %s",
+                diagnostic.title,
+                diagnostic.detail,
+            )
     logging.info("Configuration loaded successfully.")
     logging.info("Selected external transport: %s", config.external_transport)
 
@@ -59,6 +76,19 @@ def main(argv=None):
     logging.debug("Logging level set to %s", config.log_level)
 
     bridge = AsyncBridge(config)
+    if not bridge.bridge.external_handler:
+        logging.critical(
+            "Bridge initialization failed (likely handler issue). Exiting."
+        )
+        sys.exit(1)
+
+    def _handle_sigterm(signum, _frame):
+        logging.info(
+            "Signal %s received. Initiating graceful shutdown...", signum
+        )
+        bridge.request_shutdown()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
 
     try:
         asyncio.run(bridge.start())

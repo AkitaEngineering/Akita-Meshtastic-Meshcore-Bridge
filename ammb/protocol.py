@@ -16,7 +16,7 @@ import binascii
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 
 # --- Base Class ---
@@ -325,7 +325,7 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
             return None
 
         fw_ver = raw_data[1]
-        device_info = {"fw_ver": fw_ver}
+        device_info: Dict[str, Any] = {"fw_ver": fw_ver}
         if fw_ver >= 3:
             minimum_length = 1 + 1 + 1 + 1 + 4 + 12 + 40 + 20
             if len(raw_data) < minimum_length:
@@ -595,7 +595,9 @@ class MeshcoreCompanionProtocol(MeshcoreProtocolHandler):
         return None
 
 
-_serial_protocol_handlers = {
+_serial_protocol_handlers: Dict[
+    str, Type[MeshcoreProtocolHandler]
+] = {
     "json_newline": JsonNewlineProtocol,
     "raw_serial": RawSerialProtocol,
     "companion_radio": MeshcoreCompanionProtocol,

@@ -45,10 +45,13 @@ VISIBLE_LOG_LINES = 200
 class BridgeRuntime(Protocol):
     """Runtime surface required by the dashboard controller."""
 
-    external_handler: object | None
     shutdown_event: threading.Event
     to_meshtastic_queue: Queue
     to_external_queue: Queue
+
+    @property
+    def external_handler(self) -> object | None:
+        """Configured external transport handler, when initialized."""
 
     def run(self) -> None:
         """Run the bridge loop."""
@@ -58,6 +61,11 @@ class BridgeRuntime(Protocol):
 
 
 BridgeFactory = Callable[[BridgeConfig], BridgeRuntime]
+
+
+def _default_bridge_factory(config: BridgeConfig) -> BridgeRuntime:
+    """Construct the production bridge through the controller protocol."""
+    return Bridge(config)
 
 
 @dataclass(frozen=True)
@@ -165,7 +173,7 @@ class BridgeController:
         self,
         config: BridgeConfig,
         *,
-        bridge_factory: BridgeFactory = Bridge,
+        bridge_factory: BridgeFactory = _default_bridge_factory,
         event_sink: Optional[Callable[[str, str], None]] = None,
     ):
         self.config = config

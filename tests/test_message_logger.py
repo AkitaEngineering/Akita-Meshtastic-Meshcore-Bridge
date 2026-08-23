@@ -1,4 +1,5 @@
 import json
+import stat
 import time
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def test_logger_writes_json_lines(tmp_path):
     assert entry["payload"] == "hello"
     assert entry["direction"] == "meshtastic_to_external"
     assert "logged_at" in entry
+    assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
 
 
 def test_configure_message_logger_is_process_wide(tmp_path):

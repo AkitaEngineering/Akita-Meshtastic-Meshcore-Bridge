@@ -68,6 +68,32 @@ LOG_LEVEL = INFO
     assert report.diagnostics[0].title == "MQTT CA certificate missing"
 
 
+def test_preflight_warns_when_mqtt_certificate_checks_are_disabled(tmp_path):
+    config_path = _write_config(
+        tmp_path / "mqtt.ini",
+        """
+EXTERNAL_TRANSPORT = mqtt
+MQTT_BROKER = broker.example
+MQTT_PORT = 8883
+MQTT_TOPIC_IN = ammb/in
+MQTT_TOPIC_OUT = ammb/out
+MQTT_CLIENT_ID = bridge-client
+MQTT_QOS = 1
+MQTT_RETAIN_OUT = False
+MQTT_TLS_ENABLED = True
+MQTT_TLS_INSECURE = True
+LOG_LEVEL = INFO
+""",
+    )
+
+    report = run_preflight(str(config_path), importer=_fake_importer)
+
+    assert report.ready is True
+    assert "MQTT certificate verification disabled" in {
+        item.title for item in report.diagnostics
+    }
+
+
 def test_preflight_allows_warnings_without_blocking_start(tmp_path):
     config_path = _write_config(
         tmp_path / "serial.ini",

@@ -198,8 +198,11 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
         cfg_section = config["DEFAULT"]
 
         # Only set meshtastic_port if explicitly present and not commented out
+        meshtastic_port: Optional[str]
         if "MESHTASTIC_SERIAL_PORT" in cfg_section:
-            meshtastic_port = cfg_section.get("MESHTASTIC_SERIAL_PORT", "").strip()
+            meshtastic_port = cfg_section.get(
+                "MESHTASTIC_SERIAL_PORT", ""
+            ).strip()
             if not meshtastic_port or meshtastic_port.startswith("#"):
                 meshtastic_port = None
         else:
@@ -270,17 +273,12 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
                 )
                 return None
             if serial_protocol not in VALID_SERIAL_PROTOCOLS:
-                logger.warning(
-                    "Unrecognized SERIAL_PROTOCOL '%s'."
-                    " Valid options: %s.",
+                logger.error(
+                    "Invalid SERIAL_PROTOCOL '%s'. Valid options: %s.",
                     serial_protocol,
                     VALID_SERIAL_PROTOCOLS,
                 )
-                logger.warning(
-                    "Attempting to use '%s' - ensure a corresponding "
-                    "handler exists.",
-                    serial_protocol,
-                )
+                return None
             try:
                 serial_baud = cfg_section.getint("SERIAL_BAUD_RATE")
                 if serial_baud is None or serial_baud <= 0:
@@ -467,7 +465,11 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             meshtastic_retry_on_boot=meshtastic_retry_on_boot,
             meshtastic_retry_delay_s=meshtastic_retry_delay_s,
         )
-        logger.debug("Configuration loaded: %s", bridge_config)
+        # Never log the NamedTuple itself: it contains MQTT and API secrets.
+        logger.debug(
+            "Configuration loaded for external transport: %s",
+            bridge_config.external_transport,
+        )
         return bridge_config
 
     except Exception as e:

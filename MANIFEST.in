@@ -1,0 +1,5 @@
+include CHANGELOG.md
+include DEPLOYMENT.md
+recursive-include docs *.md
+recursive-include examples *.ini *.example
+recursive-include packaging *.service

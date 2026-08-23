@@ -50,3 +50,14 @@ def test_async_bridge_does_not_need_api_when_disabled():
     config = make_bridge_config(api_enabled=False)
     async_bridge = AsyncBridge(config)
     assert async_bridge.bridge.config is config
+
+
+def test_async_bridge_disables_duplicate_sync_api():
+    config = make_bridge_config(api_enabled=True)
+
+    with patch("ammb.bridge_async.Bridge") as bridge_class:
+        AsyncBridge(config)
+
+    wrapped_config = bridge_class.call_args.args[0]
+    assert wrapped_config.api_enabled is False
+    assert config.api_enabled is True

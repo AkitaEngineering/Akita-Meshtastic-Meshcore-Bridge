@@ -41,7 +41,9 @@ SERIAL_BAUD_RATE = 9600
 #   raw_serial:   Reads raw binary/text bytes and forwards them as Hex.
 #                 (Use this for MeshCore Companion Mode or binary protocols)
 #   companion_radio: MeshCore Companion USB framing protocol (recommended for MeshCore radios)
-SERIAL_PROTOCOL = json_newline  # Use json_newline for text/JSON, raw_serial for binary/hex, companion_radio for MeshCore USB framing
+# Use json_newline for text/JSON, raw_serial for binary/hex, or
+# companion_radio for MeshCore USB framing.
+SERIAL_PROTOCOL = json_newline
 
 # Auto-switch between json_newline and raw_serial after repeated decode failures.
 # Set False to disable protocol auto-detection.

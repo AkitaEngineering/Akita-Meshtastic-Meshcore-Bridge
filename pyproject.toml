@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,28 @@ description = "Bridge between Meshtastic and MeshCore networks"
 readme = "README.md"
 requires-python = ">=3.10"
 dynamic = ["dependencies"]
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Akita Engineering", email = "info@akitaengineering.com"},
+]
+keywords = ["meshtastic", "meshcore", "lora", "mqtt", "bridge"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications",
+]
+
+[project.urls]
+Homepage = "https://www.akitaengineering.com"
+Repository = "https://github.com/AkitaEngineering/Akita-Meshtastic-Meshcore-Bridge"
+Documentation = "https://github.com/AkitaEngineering/Akita-Meshtastic-Meshcore-Bridge/blob/main/DEPLOYMENT.md"
+Issues = "https://github.com/AkitaEngineering/Akita-Meshtastic-Meshcore-Bridge/issues"
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
@@ -19,6 +41,14 @@ py-modules = [
     "run_bridge",
     "run_bridge_async",
     "run_bridge_tui"
+]
+
+[tool.setuptools.data-files]
+"share/akita-mesh-bridge" = [
+    "CHANGELOG.md",
+    "DEPLOYMENT.md",
+    "examples/config.ini.example",
+    "packaging/ammb.service",
 ]
 
 [project.scripts]

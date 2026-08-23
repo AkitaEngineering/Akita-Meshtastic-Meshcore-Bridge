@@ -375,6 +375,15 @@ def _mqtt_diagnostics(config: BridgeConfig) -> list[Diagnostic]:
         )
 
     if config.mqtt_tls_enabled:
+        if config.mqtt_tls_insecure:
+            diagnostics.append(
+                Diagnostic(
+                    "warning",
+                    "MQTT certificate verification disabled",
+                    "MQTT_TLS_INSECURE disables broker identity checks.",
+                    "Set MQTT_TLS_INSECURE = False for production.",
+                )
+            )
         if config.mqtt_port == 1883:
             diagnostics.append(
                 Diagnostic(

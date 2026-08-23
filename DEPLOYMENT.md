@@ -68,6 +68,9 @@ sudo systemctl status ammb.service
 ```
 
 The unit restarts on failure. Watch logs with `journalctl -u ammb.service -f`.
+The production entry points handle systemd's `SIGTERM` and flush message logs
+before exiting. Fatal preflight findings prevent startup and are reported in the
+journal; run the explicit `--check` command for the full diagnostic report.
 
 ## Operational Notes
 - Only one process can access a serial port at a time.

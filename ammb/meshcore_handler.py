@@ -26,6 +26,9 @@ class MeshcoreHandler:
 
     RECONNECT_DELAY_S = 10
     AUTO_DETECT_FAILURE_THRESHOLD = 5
+    receiver_thread: Optional[threading.Thread]
+    sender_thread: Optional[threading.Thread]
+    _contacts_poll_thread: Optional[threading.Thread]
 
     def start_threads(self):
         """Start the receiver and sender threads for MeshcoreHandler."""
@@ -80,9 +83,9 @@ class MeshcoreHandler:
         self.shutdown_event = shutdown_event
 
         self.serial_port: Optional[serial.Serial] = None
-        self.receiver_thread: Optional[threading.Thread] = None
-        self.sender_thread: Optional[threading.Thread] = None
-        self._contacts_poll_thread: Optional[threading.Thread] = None
+        self.receiver_thread = None
+        self.sender_thread = None
+        self._contacts_poll_thread = None
         self._lock = threading.Lock()
         self._is_connected = threading.Event()
 

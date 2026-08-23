@@ -54,3 +54,28 @@ def test_resolve_config_path_prefers_explicit_then_env(tmp_path, monkeypatch):
     monkeypatch.setenv("AMMB_CONFIG", str(env_file))
     assert resolve_config_path(str(explicit)).endswith("explicit.ini")
     assert resolve_config_path().endswith("env.ini")
+
+
+def test_load_config_never_logs_secrets(tmp_path, caplog):
+    secret = "must-not-appear-in-logs"
+    path = _write_config(
+        tmp_path / "config.ini",
+        extra=(
+            "API_TOKEN = %s\n"
+            "MQTT_PASSWORD = %s\n"
+        ) % (secret, secret),
+    )
+
+    with caplog.at_level("DEBUG"):
+        assert load_config(str(path)) is not None
+
+    assert secret not in caplog.text
+
+
+def test_load_config_rejects_unknown_serial_protocol(tmp_path):
+    path = _write_config(
+        tmp_path / "config.ini",
+        extra="SERIAL_PROTOCOL = unknown-handler\n",
+    )
+
+    assert load_config(str(path)) is None

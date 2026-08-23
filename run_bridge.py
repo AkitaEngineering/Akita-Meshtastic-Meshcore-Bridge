@@ -15,6 +15,7 @@ This script handles:
 import argparse
 import logging
 import os
+import signal
 import sys
 
 # Ensure the script can find the 'ammb' package
@@ -46,7 +47,8 @@ except ImportError as e:
 # --- Imports ---
 try:
     from ammb import Bridge
-    from ammb.config_handler import load_config, resolve_config_path
+    from ammb.config_handler import resolve_config_path
+    from ammb.preflight import run_preflight
     from ammb.utils import setup_logging
 except ImportError as e:
     print(f"ERROR: Failed to import AMMB modules: {e}", file=sys.stderr)
@@ -83,10 +85,25 @@ def main(argv=None):
         args.config, fallback=os.path.join(project_root, "config.ini")
     )
     logging.info("Loading configuration from: %s", config_path)
-    config = load_config(config_path)
-    if not config:
+    report = run_preflight(config_path)
+    config = report.config
+    if not report.ready or config is None:
+        for diagnostic in report.diagnostics:
+            log = (
+                logging.error
+                if diagnostic.is_error
+                else logging.warning
+            )
+            log("Preflight %s: %s", diagnostic.title, diagnostic.detail)
         logging.critical("Failed to load configuration. Bridge cannot start.")
         sys.exit(1)
+    for diagnostic in report.diagnostics:
+        if diagnostic.severity.lower() == "warning":
+            logging.warning(
+                "Preflight warning: %s: %s",
+                diagnostic.title,
+                diagnostic.detail,
+            )
     logging.info("Configuration loaded successfully.")
     logging.info("Selected external transport: %s", config.external_transport)
 
@@ -104,6 +121,14 @@ def main(argv=None):
             "Bridge initialization failed (likely handler issue). Exiting."
         )
         sys.exit(1)
+
+    def _handle_sigterm(signum, _frame):
+        logging.info(
+            "Signal %s received. Initiating graceful shutdown...", signum
+        )
+        bridge.shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
 
     try:
         logging.info("Starting bridge run loop...")

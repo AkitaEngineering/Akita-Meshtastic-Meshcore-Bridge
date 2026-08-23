@@ -22,7 +22,15 @@ class AsyncBridge:
     def __init__(self, config: BridgeConfig):
         self.logger = logging.getLogger(__name__)
         self.config = config
-        self.bridge = Bridge(config)
+        # The async wrapper owns the FastAPI server. Disable the synchronous
+        # HTTP server in the wrapped Bridge so both implementations never try
+        # to bind the same configured port.
+        bridge_config = (
+            config._replace(api_enabled=False)
+            if config.api_enabled
+            else config
+        )
+        self.bridge = Bridge(bridge_config)
         self._running = False
         self._bridge_thread: Optional[threading.Thread] = None
 
@@ -70,6 +78,13 @@ class AsyncBridge:
 
         try:
             while self._bridge_thread.is_alive() and self._running:
+                if api_task is not None and api_task.done():
+                    failure = api_task.exception()
+                    if failure is not None:
+                        raise RuntimeError(
+                            "Async API server stopped unexpectedly"
+                        ) from failure
+                    raise RuntimeError("Async API server stopped unexpectedly")
                 await asyncio.sleep(0.25)
         except asyncio.CancelledError:
             self.logger.info("AsyncBridge received cancellation signal.")
@@ -78,16 +93,25 @@ class AsyncBridge:
             self.logger.critical(
                 "Unhandled exception in AsyncBridge: %s", e, exc_info=True
             )
+            raise
         finally:
             if server is not None:
                 server.should_exit = True
             if api_task is not None:
-                api_task.cancel()
                 try:
-                    await api_task
-                except (asyncio.CancelledError, Exception):
-                    pass
+                    await asyncio.wait_for(api_task, timeout=5)
+                except asyncio.TimeoutError:
+                    api_task.cancel()
+                    try:
+                        await api_task
+                    except asyncio.CancelledError:
+                        pass
             await self.shutdown()
+
+    def request_shutdown(self) -> None:
+        """Request a graceful stop from a synchronous signal handler."""
+        self._running = False
+        self.bridge.shutdown_event.set()
 
     async def shutdown(self):
         self.logger.info("Shutting down AsyncBridge...")

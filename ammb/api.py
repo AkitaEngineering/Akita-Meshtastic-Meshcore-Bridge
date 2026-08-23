@@ -15,6 +15,8 @@ from .health import get_health_monitor
 from .metrics import get_metrics
 from .version import __version__
 
+MAX_CONTROL_BODY_BYTES = 64 * 1024
+
 
 def extract_request_token(
     authorization: Optional[str],
@@ -154,14 +156,27 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
 
     def _handle_control(self):
         """Handle control requests."""
-        content_length = int(self.headers.get("Content-Length", 0))
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            self._send_response(400, {"error": "Invalid Content-Length"})
+            return
         if content_length == 0:
             self._send_response(400, {"error": "No request body"})
+            return
+        if content_length < 0:
+            self._send_response(400, {"error": "Invalid Content-Length"})
+            return
+        if content_length > MAX_CONTROL_BODY_BYTES:
+            self._send_response(413, {"error": "Request body too large"})
             return
 
         body = self.rfile.read(content_length)
         try:
             data = json.loads(body.decode("utf-8"))
+            if not isinstance(data, dict):
+                self._send_response(400, {"error": "JSON object required"})
+                return
             action = data.get("action")
 
             if action == "reset_metrics":
@@ -181,6 +196,8 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(response)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         if status_code == 401:
             self.send_header("WWW-Authenticate", "Bearer")
         self.end_headers()
@@ -234,6 +251,10 @@ class BridgeAPIServer:
             self.logger.error(
                 "Failed to start API server: %s", e, exc_info=True
             )
+            if self.server is not None:
+                self.server.server_close()
+                self.server = None
+            raise RuntimeError("Failed to start the configured API server") from e
 
     def stop(self):
         """Stop the API server."""
