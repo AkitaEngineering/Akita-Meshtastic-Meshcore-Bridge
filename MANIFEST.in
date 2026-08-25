@@ -1,5 +1,8 @@
 include CHANGELOG.md
 include DEPLOYMENT.md
 recursive-include docs *.md
-recursive-include examples *.ini *.example
+include examples/config.ini.example
+include examples/config.local.mqtt.ini
+include examples/config.local.serial.ini
+include examples/meshcore_simulator.py
 recursive-include packaging *.service

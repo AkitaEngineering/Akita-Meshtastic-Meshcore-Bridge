@@ -314,9 +314,11 @@ For different environments (development, production), you can:
 
 ## Security Considerations
 
+- **Do not commit live config:** `config.ini` is gitignored because it can contain `MQTT_PASSWORD`, `API_TOKEN`, and TLS certificate paths. Copy `examples/config.ini.example` (or the MQTT/serial local examples) and keep secrets out of git.
 - **MQTT Passwords**: Store securely, consider using environment variables for sensitive data
-- **TLS Certificates**: Use proper certificate paths and avoid insecure mode in production
+- **TLS Certificates**: Use proper certificate paths and avoid insecure mode in production. Certificate and key files (`*.pem`, `*.key`, `*.crt`) are gitignored.
 - **API Access**: Restrict API host to localhost (127.0.0.1), set `API_TOKEN`, and use a reverse proxy if remote access is required
+- **Message logs**: `MESSAGE_LOG_FILE` JSONL output and `ammb_tui_crash.log` are gitignored so payloads are not uploaded.
 - **Serial Ports**: Ensure proper permissions are set on serial devices
 
 ## Troubleshooting Configuration

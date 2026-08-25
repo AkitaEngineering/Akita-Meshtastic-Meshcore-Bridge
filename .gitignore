@@ -1,18 +1,111 @@
 # .gitignore
+# Keep operator secrets, keys, logs, and local tooling out of git.
 
+# --- Secrets and operator config ---
+# Live config can contain MQTT passwords, API tokens, and TLS paths.
+config.ini
+*.local.ini
+*.local.*.ini
+!examples/config.local.mqtt.ini
+!examples/config.local.serial.ini
+tmp_*.ini
+secrets.ini
+secrets.*
+credentials.*
+*.secret
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Private keys, certificates, and trust stores
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.keystore
+*.jks
+id_rsa
+id_rsa.pub
+id_dsa
+id_dsa.pub
+id_ecdsa
+id_ecdsa.pub
+id_ed25519
+id_ed25519.pub
+
+# --- Runtime logs (may contain message payloads) ---
+*.log
+logs/
+*.jsonl
+*.jsonl.[0-9]*
+ammb_tui_crash.log
+
+# --- Python ---
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
 .venv/
 venv/
 env/
-config.ini
-.pytest_cache/
-.coverage
-htmlcov/
-*.log
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+*.egg
+.eggs/
 dist/
 build/
-akita_mesh_bridge.egg-info/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+.installed.cfg
 tmp_*.py
-tmp_*.ini
+
+# --- Test / type / coverage caches ---
+.pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.cache
+.dmypy.json
+dmypy.json
+
+# --- Personal editors, workspaces, and local agent dirs ---
+.vscode/
+.idea/
+.vs/
+*.code-workspace
+*.sublime-workspace
+*.sublime-project
+*.user
+.cursor/
+.claude/
+.codex/
+.grok/
+.windsurf/
+.continue/
+.direnv/
+.envrc
+!.envrc.example
+/personal/
+/workspace/
+/workspaces/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -23,6 +23,7 @@
 ## Unreleased
 
 ### Maintenance
+- **Hardened** `.gitignore` so live `config.ini`, `.env` files, TLS keys, message logs, crash dumps, editor workspaces, and personal local directories cannot be committed. Example configs under `examples/` remain tracked.
 - **Added** `.flake8` configuration to exclude `.venv` from linting to avoid third-party noise in CI and local runs.
 - **Documented** project linting policy (79-char E501 limit, prefer wrapping and parameterized logging, and do not edit third-party site-packages).
 - **Fixed** project E501 and other flake8 issues in `ammb/` and `examples/`; tests and `mypy` were run and verified clean.
