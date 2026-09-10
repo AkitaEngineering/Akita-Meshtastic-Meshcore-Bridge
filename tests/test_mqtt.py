@@ -96,6 +96,7 @@ def test_mqtt_rate_limit_drops_excess_messages():
 
 def test_mqtt_publisher_sends_json_payload(mqtt_handler):
     handler, _to_mesh, from_mesh, shutdown = mqtt_handler
+    handler.metrics = MagicMock()
     client = MagicMock()
     client.is_connected.return_value = True
     handler.client = client
@@ -109,6 +110,7 @@ def test_mqtt_publisher_sends_json_payload(mqtt_handler):
 
     def _stop_after_first(*_args, **_kwargs):
         shutdown.set()
+        return SimpleNamespace(rc=0)
 
     client.publish.side_effect = _stop_after_first
     handler._mqtt_publisher_loop()
@@ -125,6 +127,8 @@ def test_mqtt_publisher_sends_json_payload(mqtt_handler):
         payload = client.publish.call_args[0][1]
     decoded = json.loads(payload)
     assert decoded["payload"] == "ping"
+    handler.metrics.record_external_sent.assert_called_once()
+    assert from_mesh.unfinished_tasks == 0
 
 
 def test_mqtt_connect_configures_tls():
@@ -142,3 +146,45 @@ def test_mqtt_connect_configures_tls():
     fake_client.connect_async.assert_called_once()
     fake_client.loop_start.assert_called_once()
     handler.stop()
+
+
+def test_mqtt_retries_when_initial_client_setup_failed(mqtt_handler):
+    handler, _to_mesh, _from_mesh, shutdown = mqtt_handler
+    with patch.object(handler, "connect") as connect:
+        def stop_after_retry():
+            shutdown.set()
+            return False
+        connect.side_effect = stop_after_retry
+        handler.RECONNECT_DELAY_S = 0.01
+        handler._mqtt_publisher_loop()
+    connect.assert_called_once()
+
+
+def test_mqtt_connection_state_is_exposed_to_api(mqtt_handler):
+    handler, *_ = mqtt_handler
+    handler._on_connect(MagicMock(), None, {}, 0)
+    assert handler._is_connected.is_set()
+    handler._on_disconnect(None, None, 1)
+    assert not handler._is_connected.is_set()
+
+
+def test_rejected_publish_is_not_counted_as_sent(mqtt_handler):
+    import paho.mqtt.client as mqtt
+
+    handler, _to_mesh, from_mesh, shutdown = mqtt_handler
+    handler.metrics = MagicMock()
+    handler.client = MagicMock()
+    handler.client.is_connected.return_value = True
+    handler._mqtt_connected.set()
+    from_mesh.put({"payload": "test"})
+
+    def reject(*args, **kwargs):
+        shutdown.set()
+        return SimpleNamespace(rc=mqtt.MQTT_ERR_NO_CONN)
+
+    handler.client.publish.side_effect = reject
+    handler._mqtt_publisher_loop()
+    handler.metrics.record_external_sent.assert_not_called()
+    handler.metrics.record_dropped.assert_called_once_with("external")
+    assert not handler._mqtt_connected.is_set()
+    assert from_mesh.unfinished_tasks == 0

@@ -36,6 +36,12 @@ class AsyncBridge:
 
     async def start(self):
         """Start the production bridge and optional in-process API."""
+        try:
+            await self._start()
+        finally:
+            await self.shutdown()
+
+    async def _start(self):
         self._running = True
         api_task: Optional[asyncio.Task] = None
         server = None
@@ -57,7 +63,14 @@ class AsyncBridge:
                     log_level="info",
                 )
                 server = uvicorn.Server(server_config)
-                api_task = asyncio.create_task(server.serve())
+
+                async def serve_api():
+                    try:
+                        await server.serve()
+                    except SystemExit as exc:
+                        raise RuntimeError("Async API server failed to start") from exc
+
+                api_task = asyncio.create_task(serve_api())
                 self.logger.info(
                     "Async API server starting on http://%s:%s",
                     self.config.api_host or "127.0.0.1",
@@ -67,6 +80,7 @@ class AsyncBridge:
                 self.logger.error(
                     "Failed to start async API server: %s", e, exc_info=True
                 )
+                raise RuntimeError("Failed to start the configured async API") from e
 
         self._bridge_thread = threading.Thread(
             target=self.bridge.run,
@@ -106,7 +120,6 @@ class AsyncBridge:
                         await api_task
                     except asyncio.CancelledError:
                         pass
-            await self.shutdown()
 
     def request_shutdown(self) -> None:
         """Request a graceful stop from a synchronous signal handler."""
@@ -116,7 +129,7 @@ class AsyncBridge:
     async def shutdown(self):
         self.logger.info("Shutting down AsyncBridge...")
         self._running = False
-        self.bridge.stop()
+        await asyncio.to_thread(self.bridge.stop)
         if self._bridge_thread and self._bridge_thread.is_alive():
-            self._bridge_thread.join(timeout=10)
+            await asyncio.to_thread(self._bridge_thread.join, timeout=10)
         self.logger.info("AsyncBridge shutdown complete.")

@@ -54,6 +54,7 @@ class MeshtasticHandler:
         self.validator = MessageValidator()
         self.rate_limiter = limiter_from_config(config)
         self._receive_subscribed = False
+        self._disconnect_subscribed = False
 
     def connect(self) -> bool:
         with self._lock:
@@ -87,7 +88,7 @@ class MeshtasticHandler:
                     retry_count += 1
 
                 if my_info and "num" in my_info:
-                    self.my_node_id = f"!{my_info['num']:x}"
+                    self.my_node_id = f"!{my_info['num']:08x}"
                     user_id = my_info.get("user", {}).get("id", "N/A")
                     self.logger.info(
                         "Connected to Meshtastic device. Node ID: %s (%s)",
@@ -123,6 +124,12 @@ class MeshtasticHandler:
                     self.logger.info(
                         "Meshtastic receive callback registered."
                     )
+                if not self._disconnect_subscribed:
+                    pub.subscribe(
+                        self._on_meshtastic_disconnect,
+                        "meshtastic.connection.lost",
+                    )
+                    self._disconnect_subscribed = True
                 return True
 
             except Exception as e:
@@ -166,6 +173,15 @@ class MeshtasticHandler:
         except Exception:
             pass
 
+        self._receive_subscribed = False
+        try:
+            pub.unsubscribe(
+                self._on_meshtastic_disconnect, "meshtastic.connection.lost"
+            )
+        except Exception:
+            pass
+        self._disconnect_subscribed = False
+
         with self._lock:
             if self.interface:
                 try:
@@ -188,6 +204,15 @@ class MeshtasticHandler:
             self.sender_thread.join(timeout=5)
 
         self.logger.info("Meshtastic handler stopped.")
+
+    def _on_meshtastic_disconnect(self, interface: Any):
+        if interface is not self.interface or self.shutdown_event.is_set():
+            return
+        self._is_connected.clear()
+        self.metrics.record_meshtastic_disconnection()
+        self.health_monitor.update_component(
+            "meshtastic", HealthStatus.UNHEALTHY, "Connection lost; reconnecting"
+        )
 
     def _reconnect_delay(self) -> float:
         delay = getattr(self.config, "meshtastic_retry_delay_s", None)
@@ -221,6 +246,10 @@ class MeshtasticHandler:
         return None
 
     def _on_meshtastic_receive(self, packet: Dict[str, Any], interface: Any, weak=None):
+        if self.shutdown_event.is_set():
+            return
+        if self.interface is not None and interface is not self.interface:
+            return
         try:
             # Log raw protobuf as JSON if available
             try:
@@ -235,7 +264,7 @@ class MeshtasticHandler:
 
             sender_id_num = packet.get("from")
             sender_id_hex = (
-                f"!{sender_id_num:x}"
+                f"!{sender_id_num:08x}"
                 if isinstance(sender_id_num, int)
                 else "UNKNOWN"
             )
@@ -303,7 +332,7 @@ class MeshtasticHandler:
                     "timestamp_rx": time.time(),
                     "rx_rssi": packet.get("rxRssi"),
                     "rx_snr": packet.get("rxSnr"),
-                    "channel_index": packet.get("channel"),
+                    "channel_index": packet.get("channel", 0) or 0,
                 }
                 if sender_display_name is not None:
                     external_message["sender_display_name"] = sender_display_name
@@ -360,6 +389,7 @@ class MeshtasticHandler:
                     timeout=1
                 )
                 if not item:
+                    self.to_meshtastic_queue.task_done()
                     continue
 
                 # Validate and sanitize message

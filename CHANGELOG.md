@@ -22,6 +22,14 @@
 
 ## Unreleased
 
+### Reliability fixes
+- Default omitted Meshtastic channels to channel 0 and preserve eight-digit node IDs for forwarding and loopback detection.
+- Reconnect after Meshtastic connection-loss events and ignore events from unrelated interfaces.
+- Retry failed MQTT client setup, report live MQTT connection status in both APIs, and count rejected publishes as failures.
+- Stop bridge workers after API startup/runtime failures and wake health monitoring promptly during shutdown and restart.
+- Preserve private permissions after message-log rotation and finish queue accounting when draining logs.
+- Handle non-ASCII API tokens and invalid UTF-8 control requests without server errors; declare the HTTP test-client dependency.
+
 ### Maintenance
 - **Hardened** `.gitignore` so live `config.ini`, `.env` files, TLS keys, message logs, crash dumps, editor workspaces, and personal local directories cannot be committed. Example configs under `examples/` remain tracked.
 - **Added** `.flake8` configuration to exclude `.venv` from linting to avoid third-party noise in CI and local runs.

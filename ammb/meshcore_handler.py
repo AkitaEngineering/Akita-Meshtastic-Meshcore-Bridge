@@ -783,7 +783,7 @@ class MeshcoreHandler:
 
         # CMD_SEND_CHANNEL_TXT_MSG (3)
         txt_type = 0
-        channel_idx = int(item.get("channel_index", 0))
+        channel_idx = int(item.get("channel_index", 0) or 0)
         sender_meshtastic_id = item.get("sender_meshtastic_id")
         sender_display_name = item.get("sender_display_name")
         sender_label = (

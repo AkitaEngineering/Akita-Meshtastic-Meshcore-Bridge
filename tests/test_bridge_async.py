@@ -2,6 +2,8 @@ import asyncio
 import threading
 from unittest.mock import patch
 
+import pytest
+
 from ammb.bridge_async import AsyncBridge
 from tests.conftest import make_bridge_config
 
@@ -61,3 +63,33 @@ def test_async_bridge_disables_duplicate_sync_api():
     wrapped_config = bridge_class.call_args.args[0]
     assert wrapped_config.api_enabled is False
     assert config.api_enabled is True
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("API failed"), SystemExit(1)])
+def test_async_api_failure_always_stops_bridge(failure):
+    config = make_bridge_config(api_enabled=True)
+    fake = _FakeProductionBridge(config)
+    fake.shutdown_event = threading.Event()
+    fake.run = lambda: fake.shutdown_event.wait(timeout=5)
+
+    def stop():
+        fake.stopped = True
+        fake.shutdown_event.set()
+
+    fake.stop = stop
+
+    class FailingServer:
+        def __init__(self, config):
+            self.should_exit = False
+
+        async def serve(self):
+            raise failure
+
+    with patch("ammb.bridge_async.Bridge", return_value=fake), patch(
+        "uvicorn.Server", FailingServer
+    ):
+        bridge = AsyncBridge(config)
+        with pytest.raises(RuntimeError):
+            asyncio.run(bridge.start())
+    assert fake.stopped
+    assert not bridge._bridge_thread.is_alive()

@@ -40,7 +40,7 @@ def token_matches(expected: Optional[str], provided: Optional[str]) -> bool:
         return True
     if not provided:
         return False
-    return secrets.compare_digest(expected, provided)
+    return secrets.compare_digest(expected.encode("utf-8"), provided.encode("utf-8"))
 
 
 class BridgeAPIHandler(BaseHTTPRequestHandler):
@@ -187,7 +187,7 @@ class BridgeAPIHandler(BaseHTTPRequestHandler):
                 self._send_response(
                     400, {"error": f"Unknown action: {action}"}
                 )
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             self._send_response(400, {"error": "Invalid JSON"})
 
     def _send_response(self, status_code: int, data: dict):

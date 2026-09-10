@@ -124,7 +124,9 @@ class MessageLogger:
             self._rotate_if_needed()
 
             with self._lock:
-                with open(self._log_path, "a", encoding="utf-8") as f:
+                # Rotation removes the active file; recreate it privately.
+                fd = os.open(self._log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+                with os.fdopen(fd, "a", encoding="utf-8") as f:
                     json.dump(entry, f, ensure_ascii=False, default=str)
                     f.write("\n")
 
@@ -193,6 +195,7 @@ class MessageLogger:
             try:
                 message = self._message_queue.get_nowait()
                 self._write_message(message)
+                self._message_queue.task_done()
             except Empty:
                 break
 

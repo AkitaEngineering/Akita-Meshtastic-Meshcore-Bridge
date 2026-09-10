@@ -69,3 +69,16 @@ def test_logger_rotates_when_max_size_exceeded(tmp_path):
     logger._write_message({"payload": "third"})
 
     assert log_file.exists() or Path(f"{log_file}.1").exists()
+
+
+def test_rotated_logs_remain_private_and_queue_is_drained(tmp_path):
+    log_file = tmp_path / "private.jsonl"
+    logger = MessageLogger(str(log_file))
+    logger.max_file_size = 1
+    for i in range(4):
+        logger.log_message({"payload": str(i)})
+    logger.stop()
+    assert logger._message_queue.unfinished_tasks == 0
+    assert not logger._worker_thread.is_alive()
+    for path in tmp_path.iterdir():
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600

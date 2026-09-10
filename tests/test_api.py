@@ -197,3 +197,36 @@ def test_async_api_rejects_invalid_and_oversized_control_bodies():
         headers={"Content-Type": "application/json"},
     )
     assert oversized.status_code == 413
+
+
+def test_non_ascii_token_does_not_crash_authentication():
+    assert token_matches("secret", "sécret") is False
+    assert token_matches("sécret", "sécret") is True
+
+
+@pytest.mark.parametrize("async_api", [False, True])
+def test_api_reports_live_mqtt_connection(async_api):
+    from ammb.mqtt_handler import MQTTHandler
+    from tests.test_mqtt import _mqtt_config
+
+    bridge = _FakeBridge(_mqtt_config())
+    bridge.external_handler = MQTTHandler(
+        bridge.config, Queue(), Queue(), threading.Event()
+    )
+    bridge.external_handler._mqtt_connected.set()
+    if async_api:
+        configure_async_api(bridge)
+        try:
+            response = TestClient(app).get("/api/info")
+            assert response.json()["external_connected"] is True
+        finally:
+            reset_async_api()
+    else:
+        server = BridgeAPIServer(bridge, host="127.0.0.1", port=0)
+        server.start()
+        try:
+            status, data = _request("127.0.0.1", server.port, "GET", "/api/info")
+            assert status == 200
+            assert data["external_connected"] is True
+        finally:
+            server.stop()

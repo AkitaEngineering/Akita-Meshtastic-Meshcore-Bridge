@@ -104,3 +104,20 @@ def test_meshtastic_sender_reconnects_instead_of_dropping():
     handler.connect = _fail_and_stop
     handler._meshtastic_sender_loop()
     assert shutdown.is_set()
+
+
+def test_api_startup_failure_stops_started_handlers():
+    import pytest
+
+    fake_mt = _FakeMeshtastic()
+    fake_ext = _FakeExternal()
+    with patch("ammb.bridge.MeshtasticHandler", return_value=fake_mt), patch(
+        "ammb.bridge.MeshcoreHandler", return_value=fake_ext
+    ), patch("ammb.bridge.BridgeAPIServer") as server:
+        server.return_value.start.side_effect = RuntimeError("bind failed")
+        bridge = Bridge(make_bridge_config(api_enabled=True))
+        with pytest.raises(RuntimeError, match="bind failed"):
+            bridge.run()
+    assert bridge.shutdown_event.is_set()
+    assert fake_mt.stopped
+    assert fake_ext.stopped

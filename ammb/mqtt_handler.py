@@ -49,6 +49,7 @@ class MQTTHandler:
         self.client: Optional[paho_mqtt.Client] = None
         self.publisher_thread: Optional[threading.Thread] = None
         self._mqtt_connected = threading.Event()
+        self._is_connected = self._mqtt_connected
         self._lock = threading.Lock()
 
         # Initialize metrics, health, validator, and rate limiter
@@ -345,6 +346,10 @@ class MQTTHandler:
         self.logger.info("MQTT publisher loop started.")
         while not self.shutdown_event.is_set():
             if not self._mqtt_connected.is_set():
+                # Paho retries broker outages once its loop is running. A
+                # failed client setup has no loop and needs another attempt.
+                if self.client is None:
+                    self.connect()
                 self._mqtt_connected.wait(timeout=self.RECONNECT_DELAY_S / 2)
                 continue
 
@@ -353,6 +358,7 @@ class MQTTHandler:
                     timeout=1
                 )
                 if not item:
+                    self.to_mqtt_queue.task_done()
                     continue
 
                 try:
@@ -363,7 +369,6 @@ class MQTTHandler:
                         self.logger.error(
                             "MQTT_TOPIC_OUT is not configured. Cannot publish."
                         )
-                        self.to_mqtt_queue.task_done()
                         continue
 
                     qos = self.config.mqtt_qos
@@ -376,12 +381,19 @@ class MQTTHandler:
 
                     with self._lock:
                         if self.client and self.client.is_connected():
-                            self.client.publish(
+                            result = self.client.publish(
                                 topic,
                                 payload=payload_str,
                                 qos=qos,
                                 retain=self.config.mqtt_retain_out,
                             )
+                            if result.rc != paho_mqtt.MQTT_ERR_SUCCESS:
+                                self.metrics.record_error("external")
+                                self.metrics.record_dropped("external")
+                                if result.rc == paho_mqtt.MQTT_ERR_NO_CONN:
+                                    self._mqtt_connected.clear()
+                                self.logger.error("MQTT publish rejected: %s", result.rc)
+                                continue
                             self.metrics.record_external_sent(
                                 len(payload_str.encode("utf-8"))
                             )
@@ -390,10 +402,13 @@ class MQTTHandler:
                             )
                         else:
                             self._mqtt_connected.clear()
+                            self.metrics.record_dropped("external")
 
-                    self.to_mqtt_queue.task_done()
                 except Exception as e:
                     self.logger.error(f"Error during MQTT publish: {e}")
+                    self.metrics.record_error("external")
+                    self.metrics.record_dropped("external")
+                finally:
                     self.to_mqtt_queue.task_done()
 
             except Empty:

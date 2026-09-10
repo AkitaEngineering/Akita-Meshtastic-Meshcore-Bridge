@@ -5,7 +5,6 @@ Health monitoring and status checking for the bridge.
 
 import logging
 import threading
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -55,6 +54,7 @@ class HealthMonitor:
         self.components: Dict[str, ComponentHealth] = {}
         self._lock = threading.Lock()
         self._monitoring = False
+        self._stop_event = threading.Event()
         self._monitor_thread: Optional[threading.Thread] = None
 
     def register_component(
@@ -137,6 +137,7 @@ class HealthMonitor:
         if self._monitoring:
             return
 
+        self._stop_event.clear()
         self._monitoring = True
         self._monitor_thread = threading.Thread(
             target=self._monitor_loop, daemon=True, name="HealthMonitor"
@@ -147,6 +148,7 @@ class HealthMonitor:
     def stop_monitoring(self):
         """Stop background health monitoring."""
         self._monitoring = False
+        self._stop_event.set()
         if self._monitor_thread:
             self._monitor_thread.join(timeout=5)
         self.logger.info("Health monitoring stopped")
@@ -172,12 +174,12 @@ class HealthMonitor:
                                     "Health check stale; no recent updates"
                                 )
 
-                time.sleep(self.check_interval)
+                self._stop_event.wait(self.check_interval)
             except Exception as e:
                 self.logger.error(
                     "Error in health monitor loop: %s", e, exc_info=True
                 )
-                time.sleep(self.check_interval)
+                self._stop_event.wait(self.check_interval)
 
 
 # Global health monitor instance

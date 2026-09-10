@@ -127,6 +127,12 @@ class Bridge:
             self.external_handler = None
 
     def run(self):
+        try:
+            self._run()
+        finally:
+            self.stop()
+
+    def _run(self):
         self.logger.info("Starting AMMB run sequence...")
 
         if not self.external_handler:
@@ -210,11 +216,13 @@ class Bridge:
 
         # Stop API server
         if self.api_server:
-            self.api_server.stop()
+            try:
+                self.api_server.stop()
+            except Exception:
+                self.logger.exception("Error stopping API server")
 
         # Stop health monitoring
         self.health_monitor.stop_monitoring()
-        get_message_logger().stop()
 
         self.logger.info("Stopping %s handlers...", len(self.handlers))
         for handler in reversed(self.handlers):
@@ -225,4 +233,5 @@ class Bridge:
                     f"Error stopping handler: {e}", exc_info=True
                 )
 
+        get_message_logger().stop()
         self.logger.info("Bridge shutdown sequence complete.")
