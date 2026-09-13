@@ -78,6 +78,14 @@ class BridgeConfig(NamedTuple):
     meshtastic_retry_on_boot: Optional[bool] = True
     meshtastic_retry_delay_s: Optional[int] = 10
 
+    # MQTT observer / MeshCore packet format (Optional)
+    mqtt_payload_format: str = "json"
+    meshcore_channel_key: Optional[str] = None
+    meshcore_channel_keys: str = ""
+    meshcore_include_public: bool = True
+    mqtt_origin_name: Optional[str] = None
+    mqtt_origin_id: Optional[str] = None
+
 
 CONFIG_FILE = "config.ini"
 
@@ -120,12 +128,19 @@ DEFAULT_CONFIG = {
     "API_TOKEN": "",
     "MESHTASTIC_RETRY_ON_BOOT": "True",
     "MESHTASTIC_RETRY_DELAY_S": "10",
+    "MQTT_PAYLOAD_FORMAT": "json",
+    "MESHCORE_CHANNEL_KEY": "",
+    "MESHCORE_CHANNEL_KEYS": "",
+    "MESHCORE_INCLUDE_PUBLIC": "True",
+    "MQTT_ORIGIN_NAME": "",
+    "MQTT_ORIGIN_ID": "",
 }
 
 VALID_LOG_LEVELS = {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}
 VALID_SERIAL_PROTOCOLS = {"json_newline", "raw_serial", "companion_radio"}
 VALID_TRANSPORTS = {"serial", "mqtt"}
 VALID_MQTT_QOS = {0, 1, 2}
+VALID_MQTT_PAYLOAD_FORMATS = {"json", "observer"}
 
 
 def resolve_config_path(
@@ -158,6 +173,27 @@ def _positive_int(
         return value
     except ValueError:
         return default
+
+
+def _validate_channel_key_config(
+    primary: Optional[str], extra: str
+) -> Optional[str]:
+    """Return an error string if a MeshCore channel key token is invalid."""
+    tokens = []
+    if primary:
+        tokens.append(primary)
+    tokens.extend(
+        part.strip() for part in (extra or "").split(",") if part.strip()
+    )
+    for token in tokens:
+        if token.startswith("#"):
+            continue
+        if "=" in token:
+            token = token.split("=", 1)[1].strip()
+        hex_str = "".join(ch for ch in token if ch in "0123456789abcdefABCDEF")
+        if len(hex_str) < 32:
+            return "channel key must be at least 16 bytes of hex"
+    return None
 
 
 def _positive_float(
@@ -423,6 +459,42 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             cfg_section, "MESHTASTIC_RETRY_DELAY_S", 10
         )
 
+        mqtt_payload_format = cfg_section.get(
+            "MQTT_PAYLOAD_FORMAT",
+            fallback=DEFAULT_CONFIG["MQTT_PAYLOAD_FORMAT"],
+        ).strip().lower()
+        if mqtt_payload_format not in VALID_MQTT_PAYLOAD_FORMATS:
+            logger.error(
+                "Invalid MQTT_PAYLOAD_FORMAT '%s'. Must be one of: %s",
+                mqtt_payload_format,
+                VALID_MQTT_PAYLOAD_FORMATS,
+            )
+            return None
+        meshcore_channel_key = (
+            cfg_section.get("MESHCORE_CHANNEL_KEY", fallback="").strip()
+            or None
+        )
+        meshcore_channel_keys = cfg_section.get(
+            "MESHCORE_CHANNEL_KEYS", fallback=""
+        ).strip()
+        meshcore_include_public = cfg_section.getboolean(
+            "MESHCORE_INCLUDE_PUBLIC", fallback=True
+        )
+        mqtt_origin_name = (
+            cfg_section.get("MQTT_ORIGIN_NAME", fallback="").strip() or None
+        )
+        mqtt_origin_id = (
+            cfg_section.get("MQTT_ORIGIN_ID", fallback="").strip() or None
+        )
+        key_error = _validate_channel_key_config(
+            meshcore_channel_key, meshcore_channel_keys
+        )
+        if key_error:
+            logger.error(
+                "Invalid MeshCore channel key configuration: %s", key_error
+            )
+            return None
+
         bridge_config = BridgeConfig(
             meshtastic_port=meshtastic_port,
             external_transport=cast(
@@ -464,6 +536,12 @@ def load_config(config_path: str = CONFIG_FILE) -> Optional[BridgeConfig]:
             api_token=api_token,
             meshtastic_retry_on_boot=meshtastic_retry_on_boot,
             meshtastic_retry_delay_s=meshtastic_retry_delay_s,
+            mqtt_payload_format=mqtt_payload_format,
+            meshcore_channel_key=meshcore_channel_key,
+            meshcore_channel_keys=meshcore_channel_keys,
+            meshcore_include_public=meshcore_include_public,
+            mqtt_origin_name=mqtt_origin_name,
+            mqtt_origin_id=mqtt_origin_id,
         )
         # Never log the NamedTuple itself: it contains MQTT and API secrets.
         logger.debug(

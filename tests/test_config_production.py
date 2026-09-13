@@ -72,6 +72,69 @@ def test_load_config_never_logs_secrets(tmp_path, caplog):
     assert secret not in caplog.text
 
 
+def test_load_config_reads_observer_mqtt_settings(tmp_path):
+    path = tmp_path / "mqtt.ini"
+    path.write_text(
+        "[DEFAULT]\n"
+        "MESHTASTIC_SERIAL_PORT = /dev/ttyUSB0\n"
+        "EXTERNAL_TRANSPORT = mqtt\n"
+        "MQTT_BROKER = localhost\n"
+        "MQTT_PORT = 1883\n"
+        "MQTT_TOPIC_IN = meshcore/+/+/packets\n"
+        "MQTT_TOPIC_OUT = meshcore/SEA/ammb/packets\n"
+        "MQTT_CLIENT_ID = ammb\n"
+        "MQTT_QOS = 0\n"
+        "MQTT_RETAIN_OUT = False\n"
+        "MQTT_PAYLOAD_FORMAT = observer\n"
+        "MESHCORE_CHANNEL_KEYS = #bot\n"
+        "MQTT_ORIGIN_NAME = AMMB Bridge\n"
+        "MQTT_ORIGIN_ID = abcd\n"
+    )
+    config = load_config(str(path))
+    assert config is not None
+    assert config.mqtt_payload_format == "observer"
+    assert config.meshcore_channel_keys == "#bot"
+    assert config.mqtt_origin_name == "AMMB Bridge"
+    assert config.mqtt_origin_id == "abcd"
+    assert config.meshcore_include_public is True
+
+
+def test_load_config_rejects_short_meshcore_channel_key(tmp_path):
+    path = tmp_path / "mqtt.ini"
+    path.write_text(
+        "[DEFAULT]\n"
+        "MESHTASTIC_SERIAL_PORT = /dev/ttyUSB0\n"
+        "EXTERNAL_TRANSPORT = mqtt\n"
+        "MQTT_BROKER = localhost\n"
+        "MQTT_PORT = 1883\n"
+        "MQTT_TOPIC_IN = ammb/in\n"
+        "MQTT_TOPIC_OUT = ammb/out\n"
+        "MQTT_CLIENT_ID = ammb\n"
+        "MQTT_QOS = 0\n"
+        "MQTT_RETAIN_OUT = False\n"
+        "MESHCORE_CHANNEL_KEY = deadbeef\n"
+    )
+    assert load_config(str(path)) is None
+
+
+def test_load_config_rejects_unknown_mqtt_payload_format(tmp_path):
+    path = tmp_path / "mqtt.ini"
+    path.write_text(
+        "[DEFAULT]\n"
+        "MESHTASTIC_SERIAL_PORT = /dev/ttyUSB0\n"
+        "EXTERNAL_TRANSPORT = mqtt\n"
+        "MQTT_BROKER = localhost\n"
+        "MQTT_PORT = 1883\n"
+        "MQTT_TOPIC_IN = ammb/in\n"
+        "MQTT_TOPIC_OUT = ammb/out\n"
+        "MQTT_CLIENT_ID = ammb\n"
+        "MQTT_QOS = 0\n"
+        "MQTT_RETAIN_OUT = False\n"
+        "MQTT_PAYLOAD_FORMAT = protobuf\n"
+    )
+    assert load_config(str(path)) is None
+
+
 def test_load_config_rejects_unknown_serial_protocol(tmp_path):
     path = _write_config(
         tmp_path / "config.ini",

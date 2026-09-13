@@ -514,6 +514,13 @@ def build_config_rows(config: BridgeConfig) -> list[tuple[str, str]]:
                 ),
                 ("MQTT Topic In", config.mqtt_topic_in or "--"),
                 ("MQTT Topic Out", config.mqtt_topic_out or "--"),
+                (
+                    "MQTT Payload Format",
+                    (
+                        getattr(config, "mqtt_payload_format", "json")
+                        or "json"
+                    ).upper(),
+                ),
                 ("MQTT Client ID", config.mqtt_client_id or "--"),
                 ("MQTT Username", config.mqtt_username or "anonymous"),
                 (

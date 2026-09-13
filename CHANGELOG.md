@@ -22,6 +22,11 @@
 
 ## Unreleased
 
+### MeshCore observer MQTT
+- **Accept observer PACKET JSON on MQTT.** MeshCore observer firmware publishes LetsMesh-style frames (`type=PACKET`, `raw` hex, `packet_type`) on `meshcore/{IATA}/{device}/packets`. Those frames no longer fail validation with `Missing 'payload' or 'payload_json'`. Decryptable group text (`packet_type` 5) is forwarded to Meshtastic. Status, neighbors, adverts, and encrypted direct messages are ignored.
+- **Optional observer outbound format.** `MQTT_PAYLOAD_FORMAT = observer` publishes Meshtastic text as hashed MeshCore flood GRP_TXT packets so MQTT clients that speak the observer schema can consume bridged traffic.
+- **Channel keys.** Default Public channel key is included. Extra secrets and `#hashtag` rooms are configured with `MESHCORE_CHANNEL_KEY` / `MESHCORE_CHANNEL_KEYS`.
+
 ### Reliability fixes
 - Default omitted Meshtastic channels to channel 0 and preserve eight-digit node IDs for forwarding and loopback detection.
 - Reconnect after Meshtastic connection-loss events and ignore events from unrelated interfaces.

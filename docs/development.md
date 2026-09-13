@@ -50,6 +50,7 @@ akita-meshtastic-meshcore-bridge/
 │   ├── metrics.py           # Metrics collection
 │   ├── mqtt_handler.py      # Sync MQTT handler
 │   ├── mqtt_async_handler.py # Async MQTT handler
+│   ├── observer_mqtt.py     # MeshCore observer PACKET JSON codec
 │   ├── protocol.py          # Serial protocol handlers
 │   ├── rate_limiter.py      # Rate limiting
 │   ├── tui.py               # Textual command center

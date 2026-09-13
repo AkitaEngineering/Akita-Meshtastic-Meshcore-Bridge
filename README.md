@@ -57,6 +57,8 @@ Copy `examples/config.ini.example` to `config.ini` and edit it.
 - **For MQTT:**  
   Set `EXTERNAL_TRANSPORT = mqtt` and configure broker details. Optionally enable TLS/SSL for secure connections.
 
+  MeshCore observer firmware (for example [observer.gessaman.com](https://observer.gessaman.com/)) publishes LetsMesh PACKET JSON on `meshcore/{IATA}/{device_id}/packets`. The bridge accepts that format on `MQTT_TOPIC_IN` (wildcards such as `meshcore/+/+/packets` work). Group-channel text is decrypted with the MeshCore Public key plus any extra keys you configure. Set `MQTT_PAYLOAD_FORMAT = observer` to publish Meshtastic text as hashed MeshCore GRP_TXT packets that MQTT clients understand. `mqtt.rx=true` on the observer uplinks RF to MQTT; it does not by itself TX AMMB JSON onto LoRa.
+
 - **For REST API (Optional):**  
   Set `API_ENABLED = True` and configure `API_HOST` and `API_PORT` to enable the monitoring API. Set `API_TOKEN` if the API is reachable beyond localhost.
 

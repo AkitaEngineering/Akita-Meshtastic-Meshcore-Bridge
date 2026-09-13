@@ -58,10 +58,11 @@ The command center is implemented in `ammb/tui.py`. It launches the synchronous 
    - All handlers support bidirectional message flow in their respective runtimes
    - All handlers integrate with metrics, health monitoring, validation, and rate limiting where applicable
 
-5. **Protocol Handlers** (`ammb/protocol.py`)
+5. **Protocol Handlers** (`ammb/protocol.py`, `ammb/observer_mqtt.py`)
    - Abstract base class for serial protocols
    - Implementations: `JsonNewlineProtocol`, `RawSerialProtocol`, `MeshcoreCompanionProtocol`
    - `MeshcoreCompanionProtocol` decodes both user messages and MeshCore management frames such as contact sync records, self info, device info, and adverts into structured bridge events
+   - `observer_mqtt` translates MeshCore observer/LetsMesh PACKET JSON (encrypted GRP_TXT) to and from AMMB messages
    - Extensible for custom protocols
 
 6. **Configuration Handler** (`ammb/config_handler.py`)

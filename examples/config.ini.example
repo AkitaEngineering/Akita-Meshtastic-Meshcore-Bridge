@@ -60,10 +60,25 @@ MQTT_BROKER = localhost
 MQTT_PORT = 1883
 
 # Topic the bridge subscribes to, receiving messages destined for Meshtastic.
+# AMMB JSON and MeshCore observer PACKET JSON are both accepted.
+# For observer firmware, a wildcard such as meshcore/+/+/packets works.
 MQTT_TOPIC_IN = ammb/to_meshtastic
 
 # Topic the bridge publishes messages to, originating from Meshtastic.
 MQTT_TOPIC_OUT = ammb/from_meshtastic
+
+# Outbound MQTT payload format:
+#   json:     AMMB JSON (default)
+#   observer: MeshCore observer PACKET JSON (hashed flood GRP_TXT)
+MQTT_PAYLOAD_FORMAT = json
+
+# Optional MeshCore channel secrets for observer group-text decrypt/encrypt.
+# Default includes the well-known Public channel key.
+# MESHCORE_CHANNEL_KEY = 8b3387e9c5cdea6ac9e5edbaa115cd72
+# MESHCORE_CHANNEL_KEYS = #bot
+# MESHCORE_INCLUDE_PUBLIC = True
+# MQTT_ORIGIN_NAME = AMMB Bridge
+# MQTT_ORIGIN_ID =
 
 # Username for MQTT broker authentication (leave blank for none).
 MQTT_USERNAME =
