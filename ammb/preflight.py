@@ -24,6 +24,7 @@ RUNTIME_DEPENDENCIES: tuple[DependencySpec, ...] = (
     ("paho.mqtt.client", "paho-mqtt"),
     ("pubsub", "pypubsub"),
     ("serial", "pyserial"),
+    ("cryptography", "cryptography"),
 )
 
 TUI_DEPENDENCIES: tuple[DependencySpec, ...] = (
@@ -141,6 +142,10 @@ def build_config_summary(config: BridgeConfig) -> list[tuple[str, str]]:
                 ),
                 ("MQTT topic in", config.mqtt_topic_in or "--"),
                 ("MQTT topic out", config.mqtt_topic_out or "--"),
+                (
+                    "MQTT payload format",
+                    getattr(config, "mqtt_payload_format", "json") or "json",
+                ),
                 ("MQTT client ID", config.mqtt_client_id or "--"),
                 ("MQTT username", config.mqtt_username or "anonymous"),
                 (
@@ -371,6 +376,22 @@ def _mqtt_diagnostics(config: BridgeConfig) -> list[Diagnostic]:
                 "MQTT topics are identical",
                 "MQTT_TOPIC_IN and MQTT_TOPIC_OUT use the same topic.",
                 "Use separate topics to reduce loop and replay risk.",
+            )
+        )
+
+    payload_format = (
+        getattr(config, "mqtt_payload_format", "json") or "json"
+    ).lower()
+    topic_out = (config.mqtt_topic_out or "").lower()
+    if payload_format == "json" and "/packets" in topic_out:
+        diagnostics.append(
+            Diagnostic(
+                "warning",
+                "MQTT observer packet format",
+                "MQTT_TOPIC_OUT looks like a MeshCore observer packets topic "
+                "but MQTT_PAYLOAD_FORMAT is json.",
+                "Set MQTT_PAYLOAD_FORMAT = observer so MeshCore clients "
+                "receive hashed GRP_TXT packets instead of AMMB JSON.",
             )
         )
 

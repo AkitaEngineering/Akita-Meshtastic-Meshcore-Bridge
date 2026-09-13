@@ -162,6 +162,41 @@ These settings are only used when `EXTERNAL_TRANSPORT = mqtt`.
     * **Required:** No
     * **Default:** `False`
 
+* **`MQTT_PAYLOAD_FORMAT`**
+    * **Description:** Format used when publishing Meshtastic traffic to `MQTT_TOPIC_OUT`. Inbound MQTT always accepts both AMMB JSON and MeshCore observer PACKET JSON.
+    * **Supported Values:**
+        * `json`: Publish AMMB JSON (`type`, `payload`, `sender_meshtastic_id`, ...)
+        * `observer`: Publish LetsMesh/observer PACKET JSON (encrypted MeshCore flood GRP_TXT with packet hash)
+    * **Required:** No
+    * **Default:** `json`
+
+* **`MESHCORE_CHANNEL_KEY`**
+    * **Description:** Primary MeshCore channel secret used to decrypt inbound observer group text and to encrypt outbound observer packets. 16-byte hex, or a `#hashtag` room name.
+    * **Required:** No
+    * **Default:** MeshCore Public channel key (`8b3387e9c5cdea6ac9e5edbaa115cd72`) when `MESHCORE_INCLUDE_PUBLIC = True`
+
+* **`MESHCORE_CHANNEL_KEYS`**
+    * **Description:** Extra channel secrets, comma-separated. Each entry is 16-byte hex, `name=hex`, or `#room`.
+    * **Example:** `#bot,private=ff2b7d74e8d20f71505bda9ea8d59a1c`
+    * **Required:** No
+    * **Default:** (empty)
+
+* **`MESHCORE_INCLUDE_PUBLIC`**
+    * **Description:** Always include the well-known MeshCore Public channel key when decrypting observer group text.
+    * **Values:** `True`, `False`
+    * **Required:** No
+    * **Default:** `True`
+
+* **`MQTT_ORIGIN_NAME`**
+    * **Description:** `origin` field written into outbound observer PACKET JSON. Also used to skip echo of the bridge's own packets when `MQTT_TOPIC_IN` and `MQTT_TOPIC_OUT` overlap.
+    * **Required:** No
+    * **Default:** `EXTERNAL_NETWORK_ID`
+
+* **`MQTT_ORIGIN_ID`**
+    * **Description:** `origin_id` field written into outbound observer PACKET JSON (typically a 64-character hex public key). When set, inbound packets with the same `origin_id` are ignored.
+    * **Required:** No
+    * **Default:** (empty)
+
 ### API Settings
 
 * **`API_ENABLED`**

@@ -24,6 +24,16 @@ from .config_handler import BridgeConfig
 from .health import HealthStatus, get_health_monitor
 from .metrics import get_metrics
 from .message_logger import get_message_logger
+from .observer_mqtt import (
+    SeenHashCache,
+    first_channel_key,
+    is_observer_packet,
+    is_observer_status,
+    meshtastic_item_to_observer_packet,
+    observer_packet_to_bridge_message,
+    parse_channel_keys,
+    topic_is_observer_control,
+)
 from .rate_limiter import limiter_from_config
 from .validator import MessageValidator
 
@@ -57,6 +67,23 @@ class MQTTHandler:
         self.health_monitor = get_health_monitor()
         self.validator = MessageValidator()
         self.rate_limiter = limiter_from_config(config)
+        self._observer_hashes = SeenHashCache()
+        self._channel_keys = parse_channel_keys(
+            getattr(config, "meshcore_channel_key", None),
+            getattr(config, "meshcore_channel_keys", "") or "",
+            include_public=bool(
+                getattr(config, "meshcore_include_public", True)
+            ),
+        )
+        self._mqtt_payload_format = (
+            getattr(config, "mqtt_payload_format", "json") or "json"
+        ).lower()
+        self._mqtt_origin_name = (
+            getattr(config, "mqtt_origin_name", None)
+            or config.external_network_id
+            or "AMMB"
+        )
+        self._mqtt_origin_id = getattr(config, "mqtt_origin_id", None) or ""
 
         if not all(
             [
@@ -257,6 +284,49 @@ class MQTTHandler:
         if level <= paho_mqtt.MQTT_LOG_DEBUG:
             self.logger.debug("MQTT: %s", buf)
 
+    def _normalize_inbound_mqtt(
+        self, mqtt_data: Dict[str, Any], topic: str
+    ) -> Optional[Dict[str, Any]]:
+        """Translate observer JSON into AMMB's external-message schema."""
+        if topic_is_observer_control(topic) or is_observer_status(mqtt_data):
+            self.logger.debug("Ignoring observer status/control on %s", topic)
+            return None
+
+        if not is_observer_packet(mqtt_data):
+            return mqtt_data
+
+        packet_hash = str(mqtt_data.get("hash") or "").strip()
+        origin_id = str(mqtt_data.get("origin_id") or "").strip()
+        if (
+            self._mqtt_origin_id
+            and origin_id
+            and origin_id.lower() == self._mqtt_origin_id.lower()
+        ):
+            self.logger.debug("Ignoring own observer packet (origin_id match)")
+            return None
+        if packet_hash and self._observer_hashes.seen(packet_hash):
+            self.logger.debug("Ignoring duplicate observer packet %s", packet_hash)
+            return None
+
+        dest = "^all"
+        channel_index = 0
+        if self.config.meshtastic_channel_index is not None:
+            channel_index = self.config.meshtastic_channel_index
+
+        converted = observer_packet_to_bridge_message(
+            mqtt_data,
+            self._channel_keys,
+            default_destination=dest,
+            default_channel_index=channel_index,
+        )
+        if converted is None:
+            return None
+        converted_hash = str(converted.get("observer_hash") or packet_hash)
+        if converted_hash and converted_hash.upper() != packet_hash.upper():
+            if self._observer_hashes.seen(converted_hash):
+                return None
+        return converted
+
     def _on_message(self, client, userdata, msg: paho_mqtt.MQTTMessage):
         try:
             payload_bytes = msg.payload
@@ -266,6 +336,11 @@ class MQTTHandler:
             try:
                 payload_str = payload_bytes.decode("utf-8", errors="replace")
                 mqtt_data = json.loads(payload_str)
+                topic = getattr(msg, "topic", "") or ""
+
+                mqtt_data = self._normalize_inbound_mqtt(mqtt_data, topic)
+                if mqtt_data is None:
+                    return
 
                 # Validate message
                 is_valid, error_msg = self.validator.validate_external_message(
@@ -290,7 +365,9 @@ class MQTTHandler:
                 # Sanitize message
                 mqtt_data = self.validator.sanitize_external_message(mqtt_data)
 
-                dest_meshtastic_id = mqtt_data.get("destination_meshtastic_id")
+                dest_meshtastic_id = mqtt_data.get(
+                    "destination_meshtastic_id", "^all"
+                )
                 payload = mqtt_data.get("payload")
                 payload_json = mqtt_data.get("payload_json")
                 channel_index = mqtt_data.get("channel_index", 0)
@@ -342,6 +419,33 @@ class MQTTHandler:
         except Exception as e:
             self.logger.error(f"Critical error in _on_message: {e}")
 
+    def _format_outbound_mqtt(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Optionally wrap Meshtastic text as observer PACKET JSON."""
+        if self._mqtt_payload_format != "observer":
+            return item
+        channel_key = first_channel_key(self._channel_keys)
+        if channel_key is None:
+            self.logger.warning(
+                "MQTT_PAYLOAD_FORMAT=observer but no MeshCore channel key "
+                "is configured; publishing AMMB JSON instead."
+            )
+            return item
+        encoded = meshtastic_item_to_observer_packet(
+            item,
+            channel_key,
+            origin=self._mqtt_origin_name,
+            origin_id=self._mqtt_origin_id,
+        )
+        if encoded is None:
+            self.logger.debug(
+                "Skipping observer encoding for non-text Meshtastic item"
+            )
+            return item
+        packet_hash = str(encoded.get("hash") or "")
+        if packet_hash:
+            self._observer_hashes.seen(packet_hash)
+        return encoded
+
     def _mqtt_publisher_loop(self):
         self.logger.info("MQTT publisher loop started.")
         while not self.shutdown_event.is_set():
@@ -362,7 +466,7 @@ class MQTTHandler:
                     continue
 
                 try:
-                    payload_str = json.dumps(item)
+                    payload_str = json.dumps(self._format_outbound_mqtt(item))
                     topic = self.config.mqtt_topic_out
 
                     if not topic:

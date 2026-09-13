@@ -94,6 +94,28 @@ LOG_LEVEL = INFO
     }
 
 
+def test_preflight_warns_when_observer_topic_uses_json_format(tmp_path):
+    config_path = _write_config(
+        tmp_path / "mqtt.ini",
+        """
+EXTERNAL_TRANSPORT = mqtt
+MQTT_BROKER = broker.example
+MQTT_PORT = 1883
+MQTT_TOPIC_IN = meshcore/+/+/packets
+MQTT_TOPIC_OUT = meshcore/SEA/device/packets
+MQTT_CLIENT_ID = bridge-client
+MQTT_QOS = 0
+MQTT_RETAIN_OUT = False
+MQTT_PAYLOAD_FORMAT = json
+LOG_LEVEL = INFO
+""",
+    )
+
+    report = run_preflight(str(config_path), importer=_fake_importer)
+    titles = {item.title for item in report.diagnostics}
+    assert "MQTT observer packet format" in titles
+
+
 def test_preflight_allows_warnings_without_blocking_start(tmp_path):
     config_path = _write_config(
         tmp_path / "serial.ini",

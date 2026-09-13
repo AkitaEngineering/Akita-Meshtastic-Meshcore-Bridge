@@ -241,7 +241,7 @@ Messages from external systems should be in the following format:
 }
 ```
 
-**For MQTT:**
+**For MQTT (AMMB JSON, `MQTT_PAYLOAD_FORMAT = json`):**
 ```json
 {
   "destination_meshtastic_id": "^all",
@@ -250,6 +250,29 @@ Messages from external systems should be in the following format:
   "want_ack": false
 }
 ```
+
+**For MQTT (MeshCore observer firmware):**
+
+Observer firmware publishes LetsMesh-style packets on `meshcore/{IATA}/{device_id}/packets`, not AMMB JSON. The bridge accepts those frames automatically. Group text (`packet_type` 5) is decrypted with the MeshCore Public channel key plus any keys in `MESHCORE_CHANNEL_KEY` / `MESHCORE_CHANNEL_KEYS`, then forwarded to Meshtastic. Status, neighbors, advertisements, and encrypted direct messages are ignored rather than rejected as invalid.
+
+To publish Meshtastic text in the same PACKET JSON that MeshCore MQTT clients expect, set `MQTT_PAYLOAD_FORMAT = observer`. The outbound frame is a flood GRP_TXT packet with a MeshCore packet hash.
+
+Example observer packet (inbound from firmware):
+
+```json
+{
+  "type": "PACKET",
+  "direction": "rx",
+  "packet_type": "5",
+  "route": "F",
+  "raw": "1502DCD1...",
+  "hash": "1D342605534E2CB3",
+  "origin": "Meshcore Repeater obs",
+  "origin_id": "4FEF19D1..."
+}
+```
+
+`mqtt.rx=true` on observer firmware uplinks RF packets to MQTT. It does not make the observer transmit arbitrary AMMB JSON onto LoRa. Meshtastic-to-MeshCore RF still uses serial `companion_radio` (or firmware that injects MQTT PACKET JSON onto the radio).
 
 **Destination Options:**
 * `^all` or `^broadcast`: Broadcast to all nodes
@@ -328,6 +351,15 @@ Messages from external systems should be in the following format:
   * Check the error message in the logs for specific validation failures
   * Ensure messages match the expected format (see Message Format section)
   * Verify node IDs are in the correct format (`!aabbccdd` or `^all`)
+  * If you are subscribed to `meshcore/{IATA}/{id}/packets`, observer PACKET JSON is accepted automatically. A `Missing 'payload' or 'payload_json'` warning means the JSON is neither AMMB format nor a recognized observer packet. Status topics (`.../status`) are ignored on purpose.
+
+**Observer group text never reaches Meshtastic**
+
+* **Cause:** The GRP_TXT packet is encrypted with a channel key the bridge does not have.
+* **Solution:**
+  * Public channel traffic decrypts with the default Public key
+  * For private or `#hashtag` rooms, set `MESHCORE_CHANNEL_KEY` or `MESHCORE_CHANNEL_KEYS`
+  * Encrypted direct messages (`packet_type` 2) cannot be decrypted by a passive observer and are not bridged
 
 ### API Issues
 
